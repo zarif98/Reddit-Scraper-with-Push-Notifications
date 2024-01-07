@@ -5,23 +5,24 @@ import urllib
 from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 import os
+import pickle
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
-
 
 # Load environment variables from .env file
 load_dotenv()
 
 class RedditMonitor:
-    def __init__(self, subreddit, keywords, min_upvotes=None, max_notifications=5, time_threshold_minutes=60, cleanup_interval_minutes=240):
+    # Class variable to store processed submissions
+    processed_submissions_file = 'processed_submissions.pkl'
+
+    def __init__(self, subreddit, keywords, min_upvotes=None, max_notifications=5, time_threshold_minutes=60):
         self.subreddit = subreddit
         self.keywords = keywords
         self.min_upvotes = min_upvotes
         self.max_notifications = max_notifications
         self.time_threshold_minutes = time_threshold_minutes
-        self.cleanup_interval_minutes = cleanup_interval_minutes
         self.reddit = self.authenticate_reddit()
-        self.processed_submissions = {}
+        self.load_processed_submissions()
 
     def authenticate_reddit(self):
         print("Authenticating Reddit...")
@@ -49,19 +50,20 @@ class RedditMonitor:
 
     def is_recent_submission(self, timestamp):
         current_time = datetime.now()
-        submission_time = datetime.fromtimestamp(timestamp)  # Use datetime.fromtimestamp instead of datetime.utcfromtimestamp
+        submission_time = datetime.fromtimestamp(timestamp)
         time_difference = current_time - submission_time
         return time_difference.total_seconds() <= (self.time_threshold_minutes * 60)
 
-    def cleanup_old_submissions(self):
-        print("Performing cleanup of old submissions...")
-        current_time = datetime.now(timezone.utc)
-        # Calculate the cutoff time for entries to be considered old
-        cutoff_time = current_time - timedelta(minutes=self.cleanup_interval_minutes)
-        # Filter out entries older than the cutoff time
-        self.processed_submissions = {title: timestamp for title, timestamp in self.processed_submissions.items()
-                                      if datetime.utcfromtimestamp(timestamp) >= cutoff_time}
-        print("Cleanup completed.")
+    def load_processed_submissions(self):
+        try:
+            with open(self.processed_submissions_file, 'rb') as file:
+                self.processed_submissions = pickle.load(file)
+        except FileNotFoundError:
+            self.processed_submissions = set()
+
+    def save_processed_submissions(self):
+        with open(self.processed_submissions_file, 'wb') as file:
+            pickle.dump(self.processed_submissions, file)
 
     def search_reddit_for_keywords(self):
         print(f"Searching '{self.subreddit}' subreddit for keywords...")
@@ -70,47 +72,40 @@ class RedditMonitor:
 
         try:
             for submission in subreddit_obj.new(limit=10):  # You can adjust the limit as needed
-                title = submission.title.lower()
-                timestamp = submission.created_utc
+                submission_id = f"{self.subreddit}-{submission.id}"
+                if submission_id in self.processed_submissions or not self.is_recent_submission(submission.created_utc):
+                    print(f"Skipping duplicate or old post: {submission.title}")
+                    continue
 
-                if title in self.processed_submissions or not self.is_recent_submission(timestamp):
-                    print(f"Skipping duplicate or old post: {title}")
                 message = f"Match found in '{self.subreddit}' subreddit:\n" \
-                              f"Title: {submission.title}\n" \
-                              f"URL: {submission.url}\n" \
-                              f"Upvotes: {submission.score}\n" \
-                              f"Author: {submission.author.name}"
-                
-                if all(keyword in title for keyword in self.keywords) and \
-                        (self.min_upvotes is None or submission.score >= self.min_upvotes):
-                    message = f"Match found in '{self.subreddit}' subreddit:\n" \
-                              f"Title: {submission.title}\n" \
-                              f"URL: {submission.url}\n" \
-                              f"Upvotes: {submission.score}\n" \
-                              f"Author: {submission.author.name}"
+                          f"Title: {submission.title}\n" \
+                          f"URL: {submission.url}\n" \
+                          f"Upvotes: {submission.score}\n" \
+                          f"Author: {submission.author.name}"
 
+                if all(keyword in submission.title.lower() for keyword in self.keywords) and \
+                        (self.min_upvotes is None or submission.score >= self.min_upvotes):
                     print(message)
                     self.send_push_notification(message)
                     print('-' * 40)
 
-                    self.processed_submissions[title] = timestamp
+                    self.processed_submissions.add(submission_id)
+                    self.save_processed_submissions()  # Save the processed submissions to file
                     notifications_count += 1
                     if notifications_count >= self.max_notifications:
                         print("Reached the maximum number of notifications. Exiting...")
                         return  # Break out of the loop after reaching the maximum notifications
 
             print(f"Finished searching '{self.subreddit}' subreddit for keywords.")
-            # Perform cleanup after processing submissions
-            self.cleanup_old_submissions()
         except Exception as e:
             print(f"Error during Reddit search for '{self.subreddit}':", e)
 
 def main():
     # Example usage with parallel searching
     subreddits_to_search = [
-        {'subreddit': 'hardwareswap', 'keywords': ['b450'], 'min_upvotes': 1, 'max_notifications': 3},
-        {'subreddit': 'frugalmalefashion', 'keywords': ['fjallraven'], 'min_upvotes': 20, 'max_notifications': 2},
-        {'subreddit': 'dogs', 'keywords': ['dogs', 'puppies'], 'min_upvotes': 30, 'max_notifications': 3},
+        {'subreddit': 'hardwareswap', 'keywords': ['m50'], 'max_notifications': 3},
+        # {'subreddit': 'frugalmalefashion', 'keywords': ['fjallraven'], 'min_upvotes': 20, 'max_notifications': 2},
+        # {'subreddit': 'dogs', 'keywords': ['dogs', 'puppies'], 'min_upvotes': 30, 'max_notifications': 3},
     ]
     loopTime = 0
     while True:
@@ -121,7 +116,7 @@ def main():
                 future.result()
 
         # Add a delay before the next iteration
-        iterationTime = 60#ms
+        iterationTime = 60  # ms
         print(f"Waiting for {iterationTime/60} minutes before the next iteration...")
         print(f"We have looped {loopTime} times")
         loopTime = loopTime + 1
