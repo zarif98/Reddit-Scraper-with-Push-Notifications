@@ -28,22 +28,24 @@ pip install -r requirements.txt
 {
     "subreddits": [
         {
-            "name": "hardwareswap",
-            "keywords": ["m50"],
-            "min_upvotes": null,
-            "max_notifications": null
+            "subreddit": "hardwareswap",
+            "keywords": ["m50"]
         },
         {
-            "name": "frugalmalefashion",
+            "subreddit": "frugalmalefashion",
             "keywords": ["fjallraven"],
             "min_upvotes": null,
             "max_notifications": null
         },
         {
-            "name": "dogs",
+            "subreddit": "dogs",
             "keywords": ["dogs", "puppies"],
             "min_upvotes": 30,
             "max_notifications": 3
+        },
+        {
+            "subreddit": "hardwareswap",
+            "keywords": ["3080"]
         }
     ],
     "iteration_time_minutes": 5

@@ -1,7 +1,8 @@
 {
     "subreddits_to_search": [
-        {"subreddit": "hardwareswap", "keywords": ["5800X3D"]},
-        {"subreddit": "frugalmalefashion", "keywords": ["porter"]}
+        {"subreddit": "hardwareswap", "keywords": ["b650"]},
+        {"subreddit": "frugalmalefashion", "keywords": ["porter"]},
+        {"subreddit": "gamedeals", "keywords": ["Prime"]}
     ],
-    "iteration_time_minutes": 10
+    "iteration_time_minutes": 1
 }

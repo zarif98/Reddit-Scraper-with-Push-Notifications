@@ -19,21 +19,13 @@ load_dotenv()
 class RedditMonitor:
     processed_submissions_file = 'processed_submissions.pkl'
 
-    def __init__(self, subreddit, keywords, min_upvotes=None, max_notifications=None):
+    def __init__(self, reddit, subreddit, keywords, min_upvotes=None, max_notifications=None):
+        self.reddit = reddit
         self.subreddit = subreddit
         self.keywords = keywords
         self.min_upvotes = min_upvotes
         self.max_notifications = max_notifications if max_notifications is not None else float('inf')
-        self.reddit = self.authenticate_reddit()
         self.load_processed_submissions()
-
-    def authenticate_reddit(self):
-        print(Fore.GREEN + "Authenticating Reddit..." + Style.RESET_ALL)
-        return praw.Reddit(client_id=os.getenv('REDDIT_CLIENT_ID'),
-                           client_secret=os.getenv('REDDIT_CLIENT_SECRET'),
-                           user_agent=os.getenv('REDDIT_USER_AGENT'),
-                           username=os.getenv('REDDIT_USERNAME'),
-                           password=os.getenv('REDDIT_PASSWORD'))
 
     def send_push_notification(self, message):
         print(Fore.CYAN + "Sending Push Notification..." + Style.RESET_ALL)
@@ -78,7 +70,6 @@ class RedditMonitor:
         except Exception as e:
             print(Fore.RED + "Error sending error notification:" + Style.RESET_ALL, e)
 
-
     def search_reddit_for_keywords(self):
         try:
             print(Fore.YELLOW + f"Searching '{self.subreddit}' subreddit for keywords..." + Style.RESET_ALL)
@@ -116,7 +107,17 @@ class RedditMonitor:
             print(Fore.RED + error_message + Style.RESET_ALL)
             self.send_error_notification(error_message)
 
+def authenticate_reddit():
+    print(Fore.GREEN + "Authenticating Reddit..." + Style.RESET_ALL)
+    return praw.Reddit(client_id=os.getenv('REDDIT_CLIENT_ID'),
+                       client_secret=os.getenv('REDDIT_CLIENT_SECRET'),
+                       user_agent=os.getenv('REDDIT_USER_AGENT'),
+                       username=os.getenv('REDDIT_USERNAME'),
+                       password=os.getenv('REDDIT_PASSWORD'))
+
 def main():
+    reddit = authenticate_reddit()  # Authenticate Reddit once
+
     # Load parameters from config.json
     with open('config.json', 'r') as config_file:
         config = json.load(config_file)
@@ -128,7 +129,7 @@ def main():
     while True:
         with ThreadPoolExecutor() as executor:
             # Use list comprehension to store futures and handle exceptions separately
-            futures = [executor.submit(RedditMonitor(**params).search_reddit_for_keywords) for params in subreddits_to_search]
+            futures = [executor.submit(RedditMonitor(reddit, **params).search_reddit_for_keywords) for params in subreddits_to_search]
 
             # Handle exceptions from each future separately
             for future in futures:
@@ -138,7 +139,7 @@ def main():
                     error_message = f"Error during subreddit search: {e}"
                     print(Fore.RED + error_message + Style.RESET_ALL)
                     # Send an error notification for each subreddit search failure
-                    RedditMonitor.send_error_notification(error_message)
+                    RedditMonitor(reddit).send_error_notification(error_message)
 
         # Add a delay before the next iteration
         iterationTime = iteration_time_minutes * 60  # seconds
