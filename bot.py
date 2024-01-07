@@ -8,6 +8,7 @@ import os
 import pickle
 from concurrent.futures import ThreadPoolExecutor
 from colorama import init, Fore, Style
+import json
 
 # Initialize colorama
 init(autoreset=True)
@@ -18,11 +19,11 @@ load_dotenv()
 class RedditMonitor:
     processed_submissions_file = 'processed_submissions.pkl'
 
-    def __init__(self, subreddit, keywords, min_upvotes=None, max_notifications=5):
+    def __init__(self, subreddit, keywords, min_upvotes=None, max_notifications=None):
         self.subreddit = subreddit
         self.keywords = keywords
         self.min_upvotes = min_upvotes
-        self.max_notifications = max_notifications
+        self.max_notifications = max_notifications if max_notifications is not None else float('inf')
         self.reddit = self.authenticate_reddit()
         self.load_processed_submissions()
 
@@ -97,12 +98,13 @@ class RedditMonitor:
             print(Fore.RED + f"Error during Reddit search for '{self.subreddit}':" + Style.RESET_ALL, e)
 
 def main():
-    # Example usage with parallel searching
-    subreddits_to_search = [
-        {'subreddit': 'hardwareswap', 'keywords': ['m50']},
-        {'subreddit': 'frugalmalefashion', 'keywords': ['fjallraven']},
-        {'subreddit': 'dogs', 'keywords': ['dogs', 'puppies'], 'min_upvotes': 30, 'max_notifications': 3},
-    ]
+    # Load parameters from config.json
+    with open('config.json', 'r') as config_file:
+        config = json.load(config_file)
+
+    subreddits_to_search = config.get('subreddits_to_search', [])
+    iteration_time_minutes = config.get('iteration_time_minutes', 5)
+
     loopTime = 0
     while True:
         with ThreadPoolExecutor() as executor:
@@ -112,8 +114,8 @@ def main():
                 future.result()
 
         # Add a delay before the next iteration
-        iterationTime = 60  # ms
-        print(Fore.MAGENTA + f"Waiting for {iterationTime/60} minutes before the next iteration..." + Style.RESET_ALL)
+        iterationTime = iteration_time_minutes * 60  # seconds
+        print(Fore.MAGENTA + f"Waiting for {iteration_time_minutes} minutes before the next iteration..." + Style.RESET_ALL)
         print(Fore.MAGENTA + f"We have looped {loopTime} times" + Style.RESET_ALL)
         loopTime = loopTime + 1
         time.sleep(iterationTime)

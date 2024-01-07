@@ -1,0 +1,8 @@
+{
+    "subreddits_to_search": [
+        {"subreddit": "hardwareswap", "keywords": ["m50"]},
+        {"subreddit": "frugalmalefashion", "keywords": ["fjallraven"]},
+        {"subreddit": "dogs", "keywords": ["dogs", "puppies"], "min_upvotes": 30, "max_notifications": 3}
+    ],
+    "iteration_time_minutes": 1
+}
