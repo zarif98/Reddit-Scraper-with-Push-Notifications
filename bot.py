@@ -62,12 +62,29 @@ class RedditMonitor:
         with open(self.processed_submissions_file, 'wb') as file:
             pickle.dump(self.processed_submissions, file)
 
-    def search_reddit_for_keywords(self):
-        print(Fore.YELLOW + f"Searching '{self.subreddit}' subreddit for keywords..." + Style.RESET_ALL)
-        subreddit_obj = self.reddit.subreddit(self.subreddit)
-        notifications_count = 0
-
+    def send_error_notification(self, error_message):
+        print(Fore.RED + "Error occurred. Sending error notification..." + Style.RESET_ALL)
         try:
+            conn = http.client.HTTPSConnection("api.pushover.net:443")
+            conn.request("POST", "/1/messages.json",
+                         urllib.parse.urlencode({
+                             "token": os.getenv('PUSHOVER_APP_TOKEN'),
+                             "user": os.getenv('PUSHOVER_USER_KEY'),
+                             "message": f"Error in Reddit Scraper: {error_message}",
+                         }), {"Content-type": "application/x-www-form-urlencoded"})
+            response = conn.getresponse()
+            print(Fore.RED + "Pushover API response:" + Style.RESET_ALL, response.read().decode())
+            conn.close()
+        except Exception as e:
+            print(Fore.RED + "Error sending error notification:" + Style.RESET_ALL, e)
+
+
+    def search_reddit_for_keywords(self):
+        try:
+            print(Fore.YELLOW + f"Searching '{self.subreddit}' subreddit for keywords..." + Style.RESET_ALL)
+            subreddit_obj = self.reddit.subreddit(self.subreddit)
+            notifications_count = 0
+
             for submission in subreddit_obj.new(limit=10):  # You can adjust the limit as needed
                 submission_id = f"{self.subreddit}-{submission.id}"
                 if submission_id in self.processed_submissions:
@@ -95,7 +112,9 @@ class RedditMonitor:
 
             print(Fore.YELLOW + f"Finished searching '{self.subreddit}' subreddit for keywords." + Style.RESET_ALL)
         except Exception as e:
-            print(Fore.RED + f"Error during Reddit search for '{self.subreddit}':" + Style.RESET_ALL, e)
+            error_message = f"Error during Reddit search for '{self.subreddit}': {e}"
+            print(Fore.RED + error_message + Style.RESET_ALL)
+            self.send_error_notification(error_message)
 
 def main():
     # Load parameters from config.json
@@ -108,16 +127,24 @@ def main():
     loopTime = 0
     while True:
         with ThreadPoolExecutor() as executor:
+            # Use list comprehension to store futures and handle exceptions separately
             futures = [executor.submit(RedditMonitor(**params).search_reddit_for_keywords) for params in subreddits_to_search]
-            # Wait for all tasks to complete
+
+            # Handle exceptions from each future separately
             for future in futures:
-                future.result()
+                try:
+                    future.result()
+                except Exception as e:
+                    error_message = f"Error during subreddit search: {e}"
+                    print(Fore.RED + error_message + Style.RESET_ALL)
+                    # Send an error notification for each subreddit search failure
+                    RedditMonitor.send_error_notification(error_message)
 
         # Add a delay before the next iteration
         iterationTime = iteration_time_minutes * 60  # seconds
-        print(Fore.MAGENTA + f"Waiting for {iteration_time_minutes} minutes before the next iteration..." + Style.RESET_ALL)
+        print(Fore.MAGENTA + f"Waiting {iteration_time_minutes} minutes before the next iteration..." + Style.RESET_ALL)
         print(Fore.MAGENTA + f"We have looped {loopTime} times" + Style.RESET_ALL)
-        loopTime = loopTime + 1
+        loopTime += 1
         time.sleep(iterationTime)
 
 if __name__ == "__main__":
