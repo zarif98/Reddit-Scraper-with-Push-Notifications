@@ -7,25 +7,27 @@ from dotenv import load_dotenv
 import os
 import pickle
 from concurrent.futures import ThreadPoolExecutor
+from colorama import init, Fore, Style
+
+# Initialize colorama
+init(autoreset=True)
 
 # Load environment variables from .env file
 load_dotenv()
 
 class RedditMonitor:
-    # Class variable to store processed submissions
     processed_submissions_file = 'processed_submissions.pkl'
 
-    def __init__(self, subreddit, keywords, min_upvotes=None, max_notifications=5, time_threshold_minutes=60):
+    def __init__(self, subreddit, keywords, min_upvotes=None, max_notifications=5):
         self.subreddit = subreddit
         self.keywords = keywords
         self.min_upvotes = min_upvotes
         self.max_notifications = max_notifications
-        self.time_threshold_minutes = time_threshold_minutes
         self.reddit = self.authenticate_reddit()
         self.load_processed_submissions()
 
     def authenticate_reddit(self):
-        print("Authenticating Reddit...")
+        print(Fore.GREEN + "Authenticating Reddit..." + Style.RESET_ALL)
         return praw.Reddit(client_id=os.getenv('REDDIT_CLIENT_ID'),
                            client_secret=os.getenv('REDDIT_CLIENT_SECRET'),
                            user_agent=os.getenv('REDDIT_USER_AGENT'),
@@ -33,7 +35,7 @@ class RedditMonitor:
                            password=os.getenv('REDDIT_PASSWORD'))
 
     def send_push_notification(self, message):
-        print("Sending Push Notification...")
+        print(Fore.CYAN + "Sending Push Notification..." + Style.RESET_ALL)
         try:
             conn = http.client.HTTPSConnection("api.pushover.net:443")
             conn.request("POST", "/1/messages.json",
@@ -43,16 +45,10 @@ class RedditMonitor:
                              "message": message,
                          }), {"Content-type": "application/x-www-form-urlencoded"})
             response = conn.getresponse()
-            print("Pushover API response:", response.read().decode())
+            print(Fore.CYAN + "Pushover API response:" + Style.RESET_ALL, response.read().decode())
             conn.close()
         except Exception as e:
-            print("Error sending Push Notification:", e)
-
-    def is_recent_submission(self, timestamp):
-        current_time = datetime.now()
-        submission_time = datetime.fromtimestamp(timestamp)
-        time_difference = current_time - submission_time
-        return time_difference.total_seconds() <= (self.time_threshold_minutes * 60)
+            print(Fore.RED + "Error sending Push Notification:" + Style.RESET_ALL, e)
 
     def load_processed_submissions(self):
         try:
@@ -66,15 +62,15 @@ class RedditMonitor:
             pickle.dump(self.processed_submissions, file)
 
     def search_reddit_for_keywords(self):
-        print(f"Searching '{self.subreddit}' subreddit for keywords...")
+        print(Fore.YELLOW + f"Searching '{self.subreddit}' subreddit for keywords..." + Style.RESET_ALL)
         subreddit_obj = self.reddit.subreddit(self.subreddit)
         notifications_count = 0
 
         try:
             for submission in subreddit_obj.new(limit=10):  # You can adjust the limit as needed
                 submission_id = f"{self.subreddit}-{submission.id}"
-                if submission_id in self.processed_submissions or not self.is_recent_submission(submission.created_utc):
-                    print(f"Skipping duplicate or old post: {submission.title}")
+                if submission_id in self.processed_submissions:
+                    print(Fore.YELLOW + f"Skipping duplicate post: {submission.title}" + Style.RESET_ALL)
                     continue
 
                 message = f"Match found in '{self.subreddit}' subreddit:\n" \
@@ -85,27 +81,27 @@ class RedditMonitor:
 
                 if all(keyword in submission.title.lower() for keyword in self.keywords) and \
                         (self.min_upvotes is None or submission.score >= self.min_upvotes):
-                    print(message)
+                    print(Fore.GREEN + message + Style.RESET_ALL)
                     self.send_push_notification(message)
-                    print('-' * 40)
+                    print(Fore.YELLOW + '-' * 40 + Style.RESET_ALL)
 
                     self.processed_submissions.add(submission_id)
                     self.save_processed_submissions()  # Save the processed submissions to file
                     notifications_count += 1
                     if notifications_count >= self.max_notifications:
-                        print("Reached the maximum number of notifications. Exiting...")
+                        print(Fore.YELLOW + "Reached the maximum number of notifications. Exiting..." + Style.RESET_ALL)
                         return  # Break out of the loop after reaching the maximum notifications
 
-            print(f"Finished searching '{self.subreddit}' subreddit for keywords.")
+            print(Fore.YELLOW + f"Finished searching '{self.subreddit}' subreddit for keywords." + Style.RESET_ALL)
         except Exception as e:
-            print(f"Error during Reddit search for '{self.subreddit}':", e)
+            print(Fore.RED + f"Error during Reddit search for '{self.subreddit}':" + Style.RESET_ALL, e)
 
 def main():
     # Example usage with parallel searching
     subreddits_to_search = [
-        {'subreddit': 'hardwareswap', 'keywords': ['m50'], 'max_notifications': 3},
-        # {'subreddit': 'frugalmalefashion', 'keywords': ['fjallraven'], 'min_upvotes': 20, 'max_notifications': 2},
-        # {'subreddit': 'dogs', 'keywords': ['dogs', 'puppies'], 'min_upvotes': 30, 'max_notifications': 3},
+        {'subreddit': 'hardwareswap', 'keywords': ['m50']},
+        {'subreddit': 'frugalmalefashion', 'keywords': ['fjallraven']},
+        {'subreddit': 'dogs', 'keywords': ['dogs', 'puppies'], 'min_upvotes': 30, 'max_notifications': 3},
     ]
     loopTime = 0
     while True:
@@ -117,8 +113,8 @@ def main():
 
         # Add a delay before the next iteration
         iterationTime = 60  # ms
-        print(f"Waiting for {iterationTime/60} minutes before the next iteration...")
-        print(f"We have looped {loopTime} times")
+        print(Fore.MAGENTA + f"Waiting for {iterationTime/60} minutes before the next iteration..." + Style.RESET_ALL)
+        print(Fore.MAGENTA + f"We have looped {loopTime} times" + Style.RESET_ALL)
         loopTime = loopTime + 1
         time.sleep(iterationTime)
 
