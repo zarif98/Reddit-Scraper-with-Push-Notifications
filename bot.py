@@ -19,12 +19,11 @@ load_dotenv()
 class RedditMonitor:
     processed_submissions_file = 'processed_submissions.pkl'
 
-    def __init__(self, reddit, subreddit, keywords, min_upvotes=None, max_notifications=None):
+    def __init__(self, reddit, subreddit, keywords, min_upvotes=None):
         self.reddit = reddit
         self.subreddit = subreddit
         self.keywords = keywords
         self.min_upvotes = min_upvotes
-        self.max_notifications = max_notifications if max_notifications is not None else float('inf')
         self.load_processed_submissions()
 
     def send_push_notification(self, message):
@@ -97,9 +96,6 @@ class RedditMonitor:
                     self.processed_submissions.add(submission_id)
                     self.save_processed_submissions()  # Save the processed submissions to file
                     notifications_count += 1
-                    if notifications_count >= self.max_notifications:
-                        print(Fore.YELLOW + "Reached the maximum number of notifications. Exiting..." + Style.RESET_ALL)
-                        return  # Break out of the loop after reaching the maximum notifications
 
             print(Fore.YELLOW + f"Finished searching '{self.subreddit}' subreddit for keywords." + Style.RESET_ALL)
         except Exception as e:
