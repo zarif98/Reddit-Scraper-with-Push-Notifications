@@ -9,15 +9,47 @@ import pickle
 from concurrent.futures import ThreadPoolExecutor
 from colorama import init, Fore, Style
 import json
+import logging
 
-# Initialize colorama
+# Initialize colorama and logging
 init(autoreset=True)
+
+# Custom logging formatter with colors
+class ColoredFormatter(logging.Formatter):
+    def __init__(self, fmt, datefmt=None, style='%'):
+        super().__init__(fmt, datefmt, style)
+        self.colors = {
+            logging.DEBUG: Fore.CYAN,
+            logging.INFO: Fore.GREEN,
+            logging.WARNING: Fore.YELLOW,
+            logging.ERROR: Fore.RED,
+            logging.CRITICAL: Fore.RED + Style.BRIGHT
+        }
+
+    def format(self, record):
+        color = self.colors.get(record.levelno, Fore.WHITE)
+        record.msg = f"{color}{record.msg}{Style.RESET_ALL}"
+        return super().format(record)
+
+# Set up logging configuration
+formatter = ColoredFormatter('%(asctime)s - %(levelname)s - %(message)s')
+handler = logging.StreamHandler()
+handler.setFormatter(formatter)
+logging.basicConfig(level=logging.INFO, handlers=[handler])
 
 # Load environment variables from .env file
 load_dotenv()
 
+# Check if all necessary environment variables are loaded
+required_env_vars = ['PUSHOVER_APP_TOKEN', 'PUSHOVER_USER_KEY', 'REDDIT_CLIENT_ID', 'REDDIT_CLIENT_SECRET', 'REDDIT_USER_AGENT', 'REDDIT_USERNAME', 'REDDIT_PASSWORD']
+for var in required_env_vars:
+    if os.getenv(var) is None:
+        logging.error(f'Missing required environment variable: {var}')
+        exit(1)
+
 class RedditMonitor:
     processed_submissions_file = 'processed_submissions.pkl'
+    max_file_size = 5 * 1024 * 1024  # 5 MB
 
     def __init__(self, reddit, subreddit, keywords, min_upvotes=None):
         self.reddit = reddit
@@ -27,7 +59,7 @@ class RedditMonitor:
         self.load_processed_submissions()
 
     def send_push_notification(self, message):
-        print(Fore.CYAN + "Sending Push Notification..." + Style.RESET_ALL)
+        logging.info("Sending Push Notification...")
         try:
             conn = http.client.HTTPSConnection("api.pushover.net:443")
             conn.request("POST", "/1/messages.json",
@@ -37,10 +69,10 @@ class RedditMonitor:
                              "message": message,
                          }), {"Content-type": "application/x-www-form-urlencoded"})
             response = conn.getresponse()
-            print(Fore.CYAN + "Pushover API response:" + Style.RESET_ALL, response.read().decode())
+            logging.info("Pushover API response: %s", response.read().decode())
             conn.close()
         except Exception as e:
-            print(Fore.RED + "Error sending Push Notification:" + Style.RESET_ALL, e)
+            logging.error("Error sending Push Notification: %s", e)
 
     def load_processed_submissions(self):
         try:
@@ -50,11 +82,16 @@ class RedditMonitor:
             self.processed_submissions = set()
 
     def save_processed_submissions(self):
+        if os.path.exists(self.processed_submissions_file) and os.path.getsize(self.processed_submissions_file) > self.max_file_size:
+            logging.info("Processed submissions file exceeded max size. Deleting and creating a new one.")
+            os.remove(self.processed_submissions_file)
+            self.processed_submissions = set()
+
         with open(self.processed_submissions_file, 'wb') as file:
             pickle.dump(self.processed_submissions, file)
 
     def send_error_notification(self, error_message):
-        print(Fore.RED + "Error occurred. Sending error notification..." + Style.RESET_ALL)
+        logging.error("Error occurred. Sending error notification...")
         try:
             conn = http.client.HTTPSConnection("api.pushover.net:443")
             conn.request("POST", "/1/messages.json",
@@ -64,21 +101,21 @@ class RedditMonitor:
                              "message": f"Error in Reddit Scraper: {error_message}",
                          }), {"Content-type": "application/x-www-form-urlencoded"})
             response = conn.getresponse()
-            print(Fore.RED + "Pushover API response:" + Style.RESET_ALL, response.read().decode())
+            logging.error("Pushover API response: %s", response.read().decode())
             conn.close()
         except Exception as e:
-            print(Fore.RED + "Error sending error notification:" + Style.RESET_ALL, e)
+            logging.error("Error sending error notification: %s", e)
 
     def search_reddit_for_keywords(self):
         try:
-            print(Fore.YELLOW + f"Searching '{self.subreddit}' subreddit for keywords..." + Style.RESET_ALL)
+            logging.info(f"Searching '{self.subreddit}' subreddit for keywords...")
             subreddit_obj = self.reddit.subreddit(self.subreddit)
             notifications_count = 0
 
-            for submission in subreddit_obj.new(limit=10):  # You can adjust the limit as needed
+            for submission in subreddit_obj.new(limit=10):  # Adjust the limit as needed
                 submission_id = f"{self.subreddit}-{submission.id}"
                 if submission_id in self.processed_submissions:
-                    print(Fore.YELLOW + f"Skipping duplicate post: {submission.title}" + Style.RESET_ALL)
+                    logging.info(f"Skipping duplicate post: {submission.title}")
                     continue
 
                 message = f"Match found in '{self.subreddit}' subreddit:\n" \
@@ -89,22 +126,22 @@ class RedditMonitor:
 
                 if all(keyword in submission.title.lower() for keyword in self.keywords) and \
                         (self.min_upvotes is None or submission.score >= self.min_upvotes):
-                    print(Fore.GREEN + message + Style.RESET_ALL)
+                    logging.info(message)
                     self.send_push_notification(message)
-                    print(Fore.YELLOW + '-' * 40 + Style.RESET_ALL)
+                    logging.info('-' * 40)
 
                     self.processed_submissions.add(submission_id)
                     self.save_processed_submissions()  # Save the processed submissions to file
                     notifications_count += 1
 
-            print(Fore.YELLOW + f"Finished searching '{self.subreddit}' subreddit for keywords." + Style.RESET_ALL)
+            logging.info(f"Finished searching '{self.subreddit}' subreddit for keywords.")
         except Exception as e:
             error_message = f"Error during Reddit search for '{self.subreddit}': {e}"
-            print(Fore.RED + error_message + Style.RESET_ALL)
+            logging.error(error_message)
             self.send_error_notification(error_message)
 
 def authenticate_reddit():
-    print(Fore.GREEN + "Authenticating Reddit..." + Style.RESET_ALL)
+    logging.info("Authenticating Reddit...")
     return praw.Reddit(client_id=os.getenv('REDDIT_CLIENT_ID'),
                        client_secret=os.getenv('REDDIT_CLIENT_SECRET'),
                        user_agent=os.getenv('REDDIT_USER_AGENT'),
@@ -133,14 +170,14 @@ def main():
                     future.result()
                 except Exception as e:
                     error_message = f"Error during subreddit search: {e}"
-                    print(Fore.RED + error_message + Style.RESET_ALL)
+                    logging.error(error_message)
                     # Send an error notification for each subreddit search failure
                     RedditMonitor(reddit).send_error_notification(error_message)
 
         # Add a delay before the next iteration
         iterationTime = iteration_time_minutes * 60  # seconds
-        print(Fore.MAGENTA + f"Waiting {iteration_time_minutes} minutes before the next iteration..." + Style.RESET_ALL)
-        print(Fore.MAGENTA + f"We have looped {loopTime} times" + Style.RESET_ALL)
+        logging.info(f"Waiting {iteration_time_minutes} minutes before the next iteration...")
+        logging.info(f"We have looped {loopTime} times")
         loopTime += 1
         time.sleep(iterationTime)
 
