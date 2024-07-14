@@ -1,8 +1,8 @@
 {
     "subreddits_to_search": [
-        {"subreddit": "hardwareswap", "keywords": ["b650"]},
+        {"subreddit": "hardwareswap", "keywords": ["xbox"]},
         {"subreddit": "frugalmalefashion", "keywords": ["porter"]},
-        {"subreddit": "gamedeals", "keywords": ["Prime"]}
+        {"subreddit": "gamedeals", "keywords": ["devil may"]}
     ],
-    "iteration_time_minutes": 1
+    "iteration_time_minutes": 0.5
 }

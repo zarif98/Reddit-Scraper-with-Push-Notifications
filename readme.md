@@ -52,6 +52,11 @@ pip install -r requirements.txt
 }
 ```
 
+## Env file
+This is what your .env file should look like
+![Env file example](SCR-20240714-kyky.png "Env file example")
+
+
 ## Usage
 Run the script using the following command:
 
