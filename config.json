@@ -2,7 +2,7 @@
     "subreddits_to_search": [
         {"subreddit": "hardwareswap", "keywords": ["xbox"]},
         {"subreddit": "frugalmalefashion", "keywords": ["porter"]},
-        {"subreddit": "gamedeals", "keywords": ["devil may"]}
+        {"subreddit": "gamedeals", "keywords": ["prime"]}
     ],
-    "iteration_time_minutes": 0.5
+    "iteration_time_minutes": 3
 }
