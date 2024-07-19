@@ -152,7 +152,7 @@ def main():
     reddit = authenticate_reddit()  # Authenticate Reddit once
 
     # Load parameters from config.json
-    with open('config.json', 'r') as config_file:
+    with open('search.json', 'r') as config_file:
         config = json.load(config_file)
 
     subreddits_to_search = config.get('subreddits_to_search', [])
