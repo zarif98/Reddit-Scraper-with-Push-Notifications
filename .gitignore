@@ -1,3 +1,4 @@
 .env
 *.pkl
 *.tar
+search.json
