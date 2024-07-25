@@ -1,8 +1,8 @@
 {
     "subreddits_to_search": [
-        {"subreddit": "hardwareswap", "keywords": ["xbox"]},
+        {"subreddit": "photomarket", "keywords": ["r6"]},
         {"subreddit": "frugalmalefashion", "keywords": ["porter"]},
         {"subreddit": "gamedeals", "keywords": ["prime"]}
     ],
-    "iteration_time_minutes": 3
+    "iteration_time_minutes": 5
 }
