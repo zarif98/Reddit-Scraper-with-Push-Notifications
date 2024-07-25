@@ -122,7 +122,8 @@ class RedditMonitor:
                           f"Title: {submission.title}\n" \
                           f"URL: {submission.url}\n" \
                           f"Upvotes: {submission.score}\n" \
-                          f"Author: {submission.author.name}"
+                          f"Permalink: https://www.reddit.com{submission.permalink}\n" \
+                          ##f"Author: {submission.author.name}"
 
                 if all(keyword in submission.title.lower() for keyword in self.keywords) and \
                         (self.min_upvotes is None or submission.score >= self.min_upvotes):
