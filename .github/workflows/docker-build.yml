@@ -1,0 +1,16 @@
+name: Docker Build
+
+on:
+  push:
+    branches: [ "main" ]  # Adjust this if you want to trigger on a different branch
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Check out repository
+      uses: actions/checkout@v3
+
+    - name: Build Docker image
+      run: docker build -t my-reddit-monitor .
