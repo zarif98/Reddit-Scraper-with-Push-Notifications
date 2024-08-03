@@ -1,6 +1,6 @@
 # Reddit Scraper with Push Notifications
 
-This Python script scrapes Reddit for specified keywords in multiple subreddits and sends push notifications for matching posts.
+This Python script scrapes Reddit for specified keywords in multiple subreddits and sends push notifications for matching posts. I basically use it to track free games on the GameDeals subreddit but you can use it for anything else!
 
 ## Prerequisites
 
