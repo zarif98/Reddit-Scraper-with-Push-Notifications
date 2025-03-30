@@ -159,9 +159,18 @@ def authenticate_reddit():
 def main():
     reddit = authenticate_reddit()  # Authenticate Reddit once
 
-    # Load parameters from config.json
-    with open('search.json', 'r') as config_file:
-        config = json.load(config_file)
+    # Load parameters from config file using the absolute path
+    logging.info(f"Loading configuration from: {CONFIG_FILE_PATH}")
+    try:
+        # Use the absolute path: /data/search.json
+        with open(CONFIG_FILE_PATH, 'r') as config_file:
+            config = json.load(config_file)
+    except FileNotFoundError:
+        logging.error(f"Configuration file not found at: {CONFIG_FILE_PATH}")
+        exit(1)
+    except json.JSONDecodeError:
+        logging.error(f"Error decoding JSON from configuration file: {CONFIG_FILE_PATH}")
+        exit(1)
 
     subreddits_to_search = config.get('subreddits_to_search', [])
     iteration_time_minutes = config.get('iteration_time_minutes', 5)
