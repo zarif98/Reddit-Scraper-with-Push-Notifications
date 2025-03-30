@@ -65,5 +65,10 @@ python bot.py
 ```
 The script will start monitoring the specified subreddits and send push notifications for matching posts.
 
+## Running on Synology
+If you want to run this on Synology here:
+![Portainer settings for Synology](ContainerSettings.png "Portainer example")
+
+
 ## License
 This project is licensed under the MIT License - see the LICENSE file for details.
