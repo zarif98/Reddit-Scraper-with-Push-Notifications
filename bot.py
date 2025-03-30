@@ -11,6 +11,13 @@ from colorama import init, Fore, Style
 import json
 import logging
 
+
+# --- Define paths for mounted data ---
+DATA_DIR = '/data' # Base directory for mounted host data
+CONFIG_FILE_PATH = os.path.join(DATA_DIR, 'search.json')
+PROCESSED_SUBMISSIONS_FILE_PATH = os.path.join(DATA_DIR, 'processed_submissions.pkl')
+# -------------------------------------
+
 # Initialize colorama and logging
 init(autoreset=True)
 
@@ -48,7 +55,7 @@ for var in required_env_vars:
         exit(1)
 
 class RedditMonitor:
-    processed_submissions_file = 'processed_submissions.pkl'
+    processed_submissions_file = PROCESSED_SUBMISSIONS_FILE_PATH
     max_file_size = 5 * 1024 * 1024  # 5 MB
 
     def __init__(self, reddit, subreddit, keywords, min_upvotes=None):
