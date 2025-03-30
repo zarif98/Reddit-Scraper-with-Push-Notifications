@@ -66,7 +66,7 @@ python bot.py
 The script will start monitoring the specified subreddits and send push notifications for matching posts.
 
 ## Running on Synology
-If you want to run this on Synology here:
+If you want to run this on Synology, this the volume mapping
 ![Portainer settings for Synology](ContainerSettings.png "Portainer example")
 
 
