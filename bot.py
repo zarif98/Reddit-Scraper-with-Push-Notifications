@@ -156,27 +156,55 @@ def authenticate_reddit():
                        username=os.getenv('REDDIT_USERNAME'),
                        password=os.getenv('REDDIT_PASSWORD'))
 
+def load_config():
+    """Load configuration from search.json file."""
+    logging.info(f"Loading configuration from: {CONFIG_FILE_PATH}")
+    try:
+        with open(CONFIG_FILE_PATH, 'r') as config_file:
+            config = json.load(config_file)
+        return config
+    except FileNotFoundError:
+        logging.error(f"Configuration file not found at: {CONFIG_FILE_PATH}")
+        return None
+    except json.JSONDecodeError:
+        logging.error(f"Error decoding JSON from configuration file: {CONFIG_FILE_PATH}")
+        return None
+
+def get_config_mtime():
+    """Get the modification time of the config file."""
+    try:
+        return os.path.getmtime(CONFIG_FILE_PATH)
+    except OSError:
+        return None
+
 def main():
     reddit = authenticate_reddit()  # Authenticate Reddit once
 
-    # Load parameters from config file using the absolute path
-    logging.info(f"Loading configuration from: {CONFIG_FILE_PATH}")
-    try:
-        # Use the absolute path: /data/search.json
-        with open(CONFIG_FILE_PATH, 'r') as config_file:
-            config = json.load(config_file)
-    except FileNotFoundError:
-        logging.error(f"Configuration file not found at: {CONFIG_FILE_PATH}")
+    # Initial config load
+    config = load_config()
+    if config is None:
         exit(1)
-    except json.JSONDecodeError:
-        logging.error(f"Error decoding JSON from configuration file: {CONFIG_FILE_PATH}")
-        exit(1)
-
+    
     subreddits_to_search = config.get('subreddits_to_search', [])
     iteration_time_minutes = config.get('iteration_time_minutes', 5)
+    last_config_mtime = get_config_mtime()
 
     loopTime = 0
     while True:
+        # Check if config file has been modified
+        current_mtime = get_config_mtime()
+        if current_mtime and last_config_mtime and current_mtime > last_config_mtime:
+            logging.info("Configuration file changed, reloading...")
+            new_config = load_config()
+            if new_config is not None:
+                config = new_config
+                subreddits_to_search = config.get('subreddits_to_search', [])
+                iteration_time_minutes = config.get('iteration_time_minutes', 5)
+                last_config_mtime = current_mtime
+                logging.info("Configuration reloaded successfully.")
+            else:
+                logging.warning("Failed to reload configuration, using previous settings.")
+
         with ThreadPoolExecutor() as executor:
             # Use list comprehension to store futures and handle exceptions separately
             futures = [executor.submit(RedditMonitor(reddit, **params).search_reddit_for_keywords) for params in subreddits_to_search]
