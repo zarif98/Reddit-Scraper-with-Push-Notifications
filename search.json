@@ -42,7 +42,7 @@
                 "prime"
             ],
             "id": "184345a0-4c2d-4abb-b594-c0eadd14950f",
-            "name": "r/gamedeals",
+            "name": "Amazon Prime gaming",
             "color": "#22C55E",
             "enabled": true,
             "exclude_keywords": [],
@@ -60,7 +60,7 @@
                 "free"
             ],
             "id": "24d6c15e-4975-4ba9-bef8-097ff6e0d06d",
-            "name": "r/gamedeals",
+            "name": "Free games",
             "color": "#EF4444",
             "enabled": true,
             "exclude_keywords": [],
@@ -70,26 +70,8 @@
             "domain_excludes": [],
             "flair_contains": [],
             "author_includes": [],
-            "author_excludes": []
-        },
-        {
-            "id": "263d5fe7-5242-4d38-838d-db23dd26b7e8",
-            "name": "r/test_subreddit",
-            "subreddit": "test_subreddit",
-            "keywords": [
-                "test"
-            ],
-            "exclude_keywords": [],
-            "min_upvotes": null,
-            "color": "#F97316",
-            "enabled": true,
-            "cooldown_minutes": 5,
-            "max_post_age_hours": 12,
-            "domain_contains": [],
-            "domain_excludes": [],
-            "flair_contains": [],
-            "author_includes": [],
-            "author_excludes": []
+            "author_excludes": [],
+            "min_upvotes": 100
         },
         {
             "id": "a68d1d25-3975-4dea-ba19-6d5239a2ef12",
@@ -101,25 +83,6 @@
             "exclude_keywords": [],
             "min_upvotes": null,
             "color": "#10B981",
-            "enabled": true,
-            "cooldown_minutes": 5,
-            "max_post_age_hours": 12,
-            "domain_contains": [],
-            "domain_excludes": [],
-            "flair_contains": [],
-            "author_includes": [],
-            "author_excludes": []
-        },
-        {
-            "id": "4a8a79c6-ec31-4a4c-af00-d15a1cbdfd3f",
-            "name": "r/Games",
-            "subreddit": "games",
-            "keywords": [
-                "test"
-            ],
-            "exclude_keywords": [],
-            "min_upvotes": null,
-            "color": "#EC4899",
             "enabled": true,
             "cooldown_minutes": 5,
             "max_post_age_hours": 12,

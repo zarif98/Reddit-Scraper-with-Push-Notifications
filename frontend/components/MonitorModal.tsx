@@ -252,7 +252,7 @@ export default function MonitorModal({
     return (
         <div className="modal-overlay animate-fade-in" onClick={onClose}>
             <div
-                className="modal-content animate-slide-in"
+                className="modal-content animate-slide-in relative"
                 onClick={e => e.stopPropagation()}
                 style={{ backgroundColor }}
             >
@@ -261,7 +261,16 @@ export default function MonitorModal({
                     <div className="modal-scrollable">
                         {/* Header */}
                         <div className="p-4 pb-2">
-                            <div className="flex justify-between items-start mb-4">
+                            {/* Close button for mobile */}
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                className="absolute top-2 right-2 w-8 h-8 flex items-center justify-center rounded-full bg-black/20 hover:bg-black/40 text-white/70 hover:text-white transition-colors z-10"
+                                aria-label="Close"
+                            >
+                                ✕
+                            </button>
+                            <div className="flex justify-between items-start mb-4 pr-8">
                                 <div className="flex-1">
                                     <input
                                         type="text"
