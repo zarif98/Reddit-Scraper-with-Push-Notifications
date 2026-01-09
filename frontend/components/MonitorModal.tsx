@@ -175,385 +175,389 @@ export default function MonitorModal({
                 style={{ backgroundColor }}
             >
                 <form onSubmit={handleSubmit}>
-                    {/* Header */}
-                    <div className="p-4 pb-2">
-                        <div className="flex justify-between items-start mb-4">
-                            <div className="flex-1">
-                                <input
-                                    type="text"
-                                    value={formData.name || ''}
-                                    onChange={(e) => handleInputChange('name', e.target.value)}
-                                    placeholder="Monitor Name"
-                                    className="input-field bg-transparent border-none text-xl font-semibold p-0 mb-2"
-                                    style={{ background: 'transparent' }}
-                                />
-                                <div className="flex items-center gap-2">
-                                    <span className="text-white/80">r/</span>
+                    {/* Scrollable Content */}
+                    <div className="modal-scrollable">
+                        {/* Header */}
+                        <div className="p-4 pb-2">
+                            <div className="flex justify-between items-start mb-4">
+                                <div className="flex-1">
                                     <input
                                         type="text"
-                                        value={formData.subreddit || ''}
-                                        onChange={(e) => handleInputChange('subreddit', e.target.value.replace('r/', ''))}
-                                        placeholder="subreddit"
-                                        className="input-field bg-white/10 text-sm py-2 px-3 w-auto flex-1"
-                                        required
+                                        value={formData.name || ''}
+                                        onChange={(e) => handleInputChange('name', e.target.value)}
+                                        placeholder="Monitor Name"
+                                        className="input-field bg-transparent border-none text-xl font-semibold p-0 mb-2"
+                                        style={{ background: 'transparent' }}
                                     />
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-white/80">r/</span>
+                                        <input
+                                            type="text"
+                                            value={formData.subreddit || ''}
+                                            onChange={(e) => handleInputChange('subreddit', e.target.value.replace('r/', ''))}
+                                            placeholder="subreddit"
+                                            className="input-field bg-white/10 text-sm py-2 px-3 w-auto flex-1"
+                                            required
+                                        />
+                                    </div>
                                 </div>
+                                <div
+                                    className={`toggle-switch ${formData.enabled ? 'active' : ''}`}
+                                    onClick={() => handleInputChange('enabled', !formData.enabled)}
+                                    role="switch"
+                                    aria-checked={formData.enabled}
+                                />
                             </div>
-                            <div
-                                className={`toggle-switch ${formData.enabled ? 'active' : ''}`}
-                                onClick={() => handleInputChange('enabled', !formData.enabled)}
-                                role="switch"
-                                aria-checked={formData.enabled}
+
+                            {/* Color Picker */}
+                            <ColorPicker
+                                selectedColor={formData.color || DEFAULT_COLORS[0]}
+                                onChange={(color) => handleInputChange('color', color)}
                             />
                         </div>
 
-                        {/* Color Picker */}
-                        <ColorPicker
-                            selectedColor={formData.color || DEFAULT_COLORS[0]}
-                            onChange={(color) => handleInputChange('color', color)}
-                        />
+                        {/* Tabs */}
+                        <div className="tabs mt-4">
+                            <button
+                                type="button"
+                                className={`tab ${activeTab === 'filters' ? 'active' : ''}`}
+                                onClick={() => setActiveTab('filters')}
+                            >
+                                Filters
+                            </button>
+                            <button
+                                type="button"
+                                className={`tab ${activeTab === 'alerts' ? 'active' : ''}`}
+                                onClick={() => setActiveTab('alerts')}
+                            >
+                                Alerts
+                            </button>
+                            <button
+                                type="button"
+                                className={`tab ${activeTab === 'settings' ? 'active' : ''}`}
+                                onClick={() => setActiveTab('settings')}
+                            >
+                                Settings
+                            </button>
+                        </div>
+
+                        {/* Tab Content */}
+                        <div className="p-4" style={{ backgroundColor: 'rgba(0,0,0,0.2)' }}>
+                            {activeTab === 'filters' && (
+                                <div className="space-y-4">
+                                    {/* Include Keywords */}
+                                    <div>
+                                        <label className="text-sm text-white/70 mb-2 block">Title Contains (all required)</label>
+                                        <div className="flex flex-wrap gap-2 mb-2">
+                                            {(formData.keywords || []).map((keyword, index) => (
+                                                <span key={index} className="filter-chip">
+                                                    🔍 {keyword}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => removeKeyword(index)}
+                                                        className="ml-1 text-white/60 hover:text-white"
+                                                    >
+                                                        ×
+                                                    </button>
+                                                </span>
+                                            ))}
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                value={newKeyword}
+                                                onChange={(e) => setNewKeyword(e.target.value)}
+                                                onKeyDown={(e) => handleKeyDown(e, addKeyword)}
+                                                placeholder="Add keyword..."
+                                                className="input-field flex-1"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={addKeyword}
+                                                className="btn-icon"
+                                            >
+                                                +
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Exclude Keywords */}
+                                    <div>
+                                        <label className="text-sm text-white/70 mb-2 block">Title Excludes</label>
+                                        <div className="flex flex-wrap gap-2 mb-2">
+                                            {(formData.exclude_keywords || []).map((keyword, index) => (
+                                                <span key={index} className="filter-chip exclude">
+                                                    🚫 {keyword}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => removeExcludeKeyword(index)}
+                                                        className="ml-1 text-white/60 hover:text-white"
+                                                    >
+                                                        ×
+                                                    </button>
+                                                </span>
+                                            ))}
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                value={newExcludeKeyword}
+                                                onChange={(e) => setNewExcludeKeyword(e.target.value)}
+                                                onKeyDown={(e) => handleKeyDown(e, addExcludeKeyword)}
+                                                placeholder="Add exclusion..."
+                                                className="input-field flex-1"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={addExcludeKeyword}
+                                                className="btn-icon"
+                                            >
+                                                +
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Min Upvotes */}
+                                    <div>
+                                        <label className="text-sm text-white/70 mb-2 block">Minimum Upvotes</label>
+                                        <input
+                                            type="number"
+                                            value={formData.min_upvotes || ''}
+                                            onChange={(e) => handleInputChange('min_upvotes', e.target.value ? parseInt(e.target.value) : null)}
+                                            placeholder="Any"
+                                            className="input-field w-32"
+                                            min="0"
+                                        />
+                                    </div>
+
+                                    {/* Domain Contains */}
+                                    <div>
+                                        <label className="text-sm text-white/70 mb-2 block">🌐 Domain Contains</label>
+                                        <div className="flex flex-wrap gap-2 mb-2">
+                                            {(formData.domain_contains || []).map((domain, index) => (
+                                                <span key={index} className="filter-chip">
+                                                    🔗 {domain}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => removeDomainContains(index)}
+                                                        className="ml-1 text-white/60 hover:text-white"
+                                                    >
+                                                        ×
+                                                    </button>
+                                                </span>
+                                            ))}
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                value={newDomainContains}
+                                                onChange={(e) => setNewDomainContains(e.target.value)}
+                                                onKeyDown={(e) => handleKeyDown(e, addDomainContains)}
+                                                placeholder="e.g. amazon.com"
+                                                className="input-field flex-1"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={addDomainContains}
+                                                className="btn-icon"
+                                            >
+                                                +
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Domain Excludes */}
+                                    <div>
+                                        <label className="text-sm text-white/70 mb-2 block">🚫 Domain Excludes</label>
+                                        <div className="flex flex-wrap gap-2 mb-2">
+                                            {(formData.domain_excludes || []).map((domain, index) => (
+                                                <span key={index} className="filter-chip exclude">
+                                                    🔗 {domain}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => removeDomainExcludes(index)}
+                                                        className="ml-1 text-white/60 hover:text-white"
+                                                    >
+                                                        ×
+                                                    </button>
+                                                </span>
+                                            ))}
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                value={newDomainExcludes}
+                                                onChange={(e) => setNewDomainExcludes(e.target.value)}
+                                                onKeyDown={(e) => handleKeyDown(e, addDomainExcludes)}
+                                                placeholder="Exclude domain..."
+                                                className="input-field flex-1"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={addDomainExcludes}
+                                                className="btn-icon"
+                                            >
+                                                +
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Flair Contains */}
+                                    <div>
+                                        <label className="text-sm text-white/70 mb-2 block">🏷️ Flair Contains</label>
+                                        <div className="flex flex-wrap gap-2 mb-2">
+                                            {(formData.flair_contains || []).map((flair, index) => (
+                                                <span key={index} className="filter-chip">
+                                                    🏷️ {flair}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => removeFlairContains(index)}
+                                                        className="ml-1 text-white/60 hover:text-white"
+                                                    >
+                                                        ×
+                                                    </button>
+                                                </span>
+                                            ))}
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                value={newFlairContains}
+                                                onChange={(e) => setNewFlairContains(e.target.value)}
+                                                onKeyDown={(e) => handleKeyDown(e, addFlairContains)}
+                                                placeholder="e.g. Sale, Deal"
+                                                className="input-field flex-1"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={addFlairContains}
+                                                className="btn-icon"
+                                            >
+                                                +
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Author Includes */}
+                                    <div>
+                                        <label className="text-sm text-white/70 mb-2 block">👤 Only from Authors</label>
+                                        <div className="flex flex-wrap gap-2 mb-2">
+                                            {(formData.author_includes || []).map((author, index) => (
+                                                <span key={index} className="filter-chip">
+                                                    👤 {author}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => removeAuthorIncludes(index)}
+                                                        className="ml-1 text-white/60 hover:text-white"
+                                                    >
+                                                        ×
+                                                    </button>
+                                                </span>
+                                            ))}
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                value={newAuthorIncludes}
+                                                onChange={(e) => setNewAuthorIncludes(e.target.value)}
+                                                onKeyDown={(e) => handleKeyDown(e, addAuthorIncludes)}
+                                                placeholder="Username..."
+                                                className="input-field flex-1"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={addAuthorIncludes}
+                                                className="btn-icon"
+                                            >
+                                                +
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Author Excludes */}
+                                    <div>
+                                        <label className="text-sm text-white/70 mb-2 block">🚫 Exclude Authors</label>
+                                        <div className="flex flex-wrap gap-2 mb-2">
+                                            {(formData.author_excludes || []).map((author, index) => (
+                                                <span key={index} className="filter-chip exclude">
+                                                    👤 {author}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => removeAuthorExcludes(index)}
+                                                        className="ml-1 text-white/60 hover:text-white"
+                                                    >
+                                                        ×
+                                                    </button>
+                                                </span>
+                                            ))}
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                value={newAuthorExcludes}
+                                                onChange={(e) => setNewAuthorExcludes(e.target.value)}
+                                                onKeyDown={(e) => handleKeyDown(e, addAuthorExcludes)}
+                                                placeholder="Username to exclude..."
+                                                className="input-field flex-1"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={addAuthorExcludes}
+                                                className="btn-icon"
+                                            >
+                                                +
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'alerts' && (
+                                <div className="text-center py-8 text-white/60">
+                                    <div className="text-4xl mb-4">🔔</div>
+                                    <p>Alerts will appear here when posts match your filters.</p>
+                                    <p className="text-sm mt-2">Check your Pushover notifications for real-time alerts!</p>
+                                </div>
+                            )}
+
+                            {activeTab === 'settings' && (
+                                <div className="space-y-2">
+                                    <div className="settings-row">
+                                        <span className="text-white/90">Cooldown</span>
+                                        <select
+                                            value={formData.cooldown_minutes || 5}
+                                            onChange={(e) => handleInputChange('cooldown_minutes', parseInt(e.target.value))}
+                                            className="input-field w-auto bg-white/10"
+                                        >
+                                            <option value={1}>1 Minute</option>
+                                            <option value={5}>5 Minutes</option>
+                                            <option value={10}>10 Minutes</option>
+                                            <option value={15}>15 Minutes</option>
+                                            <option value={30}>30 Minutes</option>
+                                            <option value={60}>1 Hour</option>
+                                        </select>
+                                    </div>
+
+                                    <div className="settings-row">
+                                        <span className="text-white/90">Max Post Age</span>
+                                        <select
+                                            value={formData.max_post_age_hours || 12}
+                                            onChange={(e) => handleInputChange('max_post_age_hours', parseInt(e.target.value))}
+                                            className="input-field w-auto bg-white/10"
+                                        >
+                                            <option value={1}>1 Hour</option>
+                                            <option value={6}>6 Hours</option>
+                                            <option value={12}>12 Hours</option>
+                                            <option value={24}>24 Hours</option>
+                                            <option value={48}>2 Days</option>
+                                            <option value={168}>1 Week</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     </div>
-
-                    {/* Tabs */}
-                    <div className="tabs mt-4">
-                        <button
-                            type="button"
-                            className={`tab ${activeTab === 'filters' ? 'active' : ''}`}
-                            onClick={() => setActiveTab('filters')}
-                        >
-                            Filters
-                        </button>
-                        <button
-                            type="button"
-                            className={`tab ${activeTab === 'alerts' ? 'active' : ''}`}
-                            onClick={() => setActiveTab('alerts')}
-                        >
-                            Alerts
-                        </button>
-                        <button
-                            type="button"
-                            className={`tab ${activeTab === 'settings' ? 'active' : ''}`}
-                            onClick={() => setActiveTab('settings')}
-                        >
-                            Settings
-                        </button>
-                    </div>
-
-                    {/* Tab Content */}
-                    <div className="p-4 min-h-[200px]" style={{ backgroundColor: 'rgba(0,0,0,0.2)' }}>
-                        {activeTab === 'filters' && (
-                            <div className="space-y-4">
-                                {/* Include Keywords */}
-                                <div>
-                                    <label className="text-sm text-white/70 mb-2 block">Title Contains (all required)</label>
-                                    <div className="flex flex-wrap gap-2 mb-2">
-                                        {(formData.keywords || []).map((keyword, index) => (
-                                            <span key={index} className="filter-chip">
-                                                🔍 {keyword}
-                                                <button
-                                                    type="button"
-                                                    onClick={() => removeKeyword(index)}
-                                                    className="ml-1 text-white/60 hover:text-white"
-                                                >
-                                                    ×
-                                                </button>
-                                            </span>
-                                        ))}
-                                    </div>
-                                    <div className="flex gap-2">
-                                        <input
-                                            type="text"
-                                            value={newKeyword}
-                                            onChange={(e) => setNewKeyword(e.target.value)}
-                                            onKeyDown={(e) => handleKeyDown(e, addKeyword)}
-                                            placeholder="Add keyword..."
-                                            className="input-field flex-1"
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={addKeyword}
-                                            className="btn-icon"
-                                        >
-                                            +
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {/* Exclude Keywords */}
-                                <div>
-                                    <label className="text-sm text-white/70 mb-2 block">Title Excludes</label>
-                                    <div className="flex flex-wrap gap-2 mb-2">
-                                        {(formData.exclude_keywords || []).map((keyword, index) => (
-                                            <span key={index} className="filter-chip exclude">
-                                                🚫 {keyword}
-                                                <button
-                                                    type="button"
-                                                    onClick={() => removeExcludeKeyword(index)}
-                                                    className="ml-1 text-white/60 hover:text-white"
-                                                >
-                                                    ×
-                                                </button>
-                                            </span>
-                                        ))}
-                                    </div>
-                                    <div className="flex gap-2">
-                                        <input
-                                            type="text"
-                                            value={newExcludeKeyword}
-                                            onChange={(e) => setNewExcludeKeyword(e.target.value)}
-                                            onKeyDown={(e) => handleKeyDown(e, addExcludeKeyword)}
-                                            placeholder="Add exclusion..."
-                                            className="input-field flex-1"
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={addExcludeKeyword}
-                                            className="btn-icon"
-                                        >
-                                            +
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {/* Min Upvotes */}
-                                <div>
-                                    <label className="text-sm text-white/70 mb-2 block">Minimum Upvotes</label>
-                                    <input
-                                        type="number"
-                                        value={formData.min_upvotes || ''}
-                                        onChange={(e) => handleInputChange('min_upvotes', e.target.value ? parseInt(e.target.value) : null)}
-                                        placeholder="Any"
-                                        className="input-field w-32"
-                                        min="0"
-                                    />
-                                </div>
-
-                                {/* Domain Contains */}
-                                <div>
-                                    <label className="text-sm text-white/70 mb-2 block">🌐 Domain Contains</label>
-                                    <div className="flex flex-wrap gap-2 mb-2">
-                                        {(formData.domain_contains || []).map((domain, index) => (
-                                            <span key={index} className="filter-chip">
-                                                🔗 {domain}
-                                                <button
-                                                    type="button"
-                                                    onClick={() => removeDomainContains(index)}
-                                                    className="ml-1 text-white/60 hover:text-white"
-                                                >
-                                                    ×
-                                                </button>
-                                            </span>
-                                        ))}
-                                    </div>
-                                    <div className="flex gap-2">
-                                        <input
-                                            type="text"
-                                            value={newDomainContains}
-                                            onChange={(e) => setNewDomainContains(e.target.value)}
-                                            onKeyDown={(e) => handleKeyDown(e, addDomainContains)}
-                                            placeholder="e.g. amazon.com"
-                                            className="input-field flex-1"
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={addDomainContains}
-                                            className="btn-icon"
-                                        >
-                                            +
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {/* Domain Excludes */}
-                                <div>
-                                    <label className="text-sm text-white/70 mb-2 block">🚫 Domain Excludes</label>
-                                    <div className="flex flex-wrap gap-2 mb-2">
-                                        {(formData.domain_excludes || []).map((domain, index) => (
-                                            <span key={index} className="filter-chip exclude">
-                                                🔗 {domain}
-                                                <button
-                                                    type="button"
-                                                    onClick={() => removeDomainExcludes(index)}
-                                                    className="ml-1 text-white/60 hover:text-white"
-                                                >
-                                                    ×
-                                                </button>
-                                            </span>
-                                        ))}
-                                    </div>
-                                    <div className="flex gap-2">
-                                        <input
-                                            type="text"
-                                            value={newDomainExcludes}
-                                            onChange={(e) => setNewDomainExcludes(e.target.value)}
-                                            onKeyDown={(e) => handleKeyDown(e, addDomainExcludes)}
-                                            placeholder="Exclude domain..."
-                                            className="input-field flex-1"
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={addDomainExcludes}
-                                            className="btn-icon"
-                                        >
-                                            +
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {/* Flair Contains */}
-                                <div>
-                                    <label className="text-sm text-white/70 mb-2 block">🏷️ Flair Contains</label>
-                                    <div className="flex flex-wrap gap-2 mb-2">
-                                        {(formData.flair_contains || []).map((flair, index) => (
-                                            <span key={index} className="filter-chip">
-                                                🏷️ {flair}
-                                                <button
-                                                    type="button"
-                                                    onClick={() => removeFlairContains(index)}
-                                                    className="ml-1 text-white/60 hover:text-white"
-                                                >
-                                                    ×
-                                                </button>
-                                            </span>
-                                        ))}
-                                    </div>
-                                    <div className="flex gap-2">
-                                        <input
-                                            type="text"
-                                            value={newFlairContains}
-                                            onChange={(e) => setNewFlairContains(e.target.value)}
-                                            onKeyDown={(e) => handleKeyDown(e, addFlairContains)}
-                                            placeholder="e.g. Sale, Deal"
-                                            className="input-field flex-1"
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={addFlairContains}
-                                            className="btn-icon"
-                                        >
-                                            +
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {/* Author Includes */}
-                                <div>
-                                    <label className="text-sm text-white/70 mb-2 block">👤 Only from Authors</label>
-                                    <div className="flex flex-wrap gap-2 mb-2">
-                                        {(formData.author_includes || []).map((author, index) => (
-                                            <span key={index} className="filter-chip">
-                                                👤 {author}
-                                                <button
-                                                    type="button"
-                                                    onClick={() => removeAuthorIncludes(index)}
-                                                    className="ml-1 text-white/60 hover:text-white"
-                                                >
-                                                    ×
-                                                </button>
-                                            </span>
-                                        ))}
-                                    </div>
-                                    <div className="flex gap-2">
-                                        <input
-                                            type="text"
-                                            value={newAuthorIncludes}
-                                            onChange={(e) => setNewAuthorIncludes(e.target.value)}
-                                            onKeyDown={(e) => handleKeyDown(e, addAuthorIncludes)}
-                                            placeholder="Username..."
-                                            className="input-field flex-1"
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={addAuthorIncludes}
-                                            className="btn-icon"
-                                        >
-                                            +
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {/* Author Excludes */}
-                                <div>
-                                    <label className="text-sm text-white/70 mb-2 block">🚫 Exclude Authors</label>
-                                    <div className="flex flex-wrap gap-2 mb-2">
-                                        {(formData.author_excludes || []).map((author, index) => (
-                                            <span key={index} className="filter-chip exclude">
-                                                👤 {author}
-                                                <button
-                                                    type="button"
-                                                    onClick={() => removeAuthorExcludes(index)}
-                                                    className="ml-1 text-white/60 hover:text-white"
-                                                >
-                                                    ×
-                                                </button>
-                                            </span>
-                                        ))}
-                                    </div>
-                                    <div className="flex gap-2">
-                                        <input
-                                            type="text"
-                                            value={newAuthorExcludes}
-                                            onChange={(e) => setNewAuthorExcludes(e.target.value)}
-                                            onKeyDown={(e) => handleKeyDown(e, addAuthorExcludes)}
-                                            placeholder="Username to exclude..."
-                                            className="input-field flex-1"
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={addAuthorExcludes}
-                                            className="btn-icon"
-                                        >
-                                            +
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {activeTab === 'alerts' && (
-                            <div className="text-center py-8 text-white/60">
-                                <div className="text-4xl mb-4">🔔</div>
-                                <p>Alerts will appear here when posts match your filters.</p>
-                                <p className="text-sm mt-2">Check your Pushover notifications for real-time alerts!</p>
-                            </div>
-                        )}
-
-                        {activeTab === 'settings' && (
-                            <div className="space-y-2">
-                                <div className="settings-row">
-                                    <span className="text-white/90">Cooldown</span>
-                                    <select
-                                        value={formData.cooldown_minutes || 5}
-                                        onChange={(e) => handleInputChange('cooldown_minutes', parseInt(e.target.value))}
-                                        className="input-field w-auto bg-white/10"
-                                    >
-                                        <option value={1}>1 Minute</option>
-                                        <option value={5}>5 Minutes</option>
-                                        <option value={10}>10 Minutes</option>
-                                        <option value={15}>15 Minutes</option>
-                                        <option value={30}>30 Minutes</option>
-                                        <option value={60}>1 Hour</option>
-                                    </select>
-                                </div>
-
-                                <div className="settings-row">
-                                    <span className="text-white/90">Max Post Age</span>
-                                    <select
-                                        value={formData.max_post_age_hours || 12}
-                                        onChange={(e) => handleInputChange('max_post_age_hours', parseInt(e.target.value))}
-                                        className="input-field w-auto bg-white/10"
-                                    >
-                                        <option value={1}>1 Hour</option>
-                                        <option value={6}>6 Hours</option>
-                                        <option value={12}>12 Hours</option>
-                                        <option value={24}>24 Hours</option>
-                                        <option value={48}>2 Days</option>
-                                        <option value={168}>1 Week</option>
-                                    </select>
-                                </div>
-                            </div>
-                        )}
-                    </div>
+                    {/* End Scrollable Content */}
 
                     {/* Error Message */}
                     {error && (
@@ -562,8 +566,8 @@ export default function MonitorModal({
                         </div>
                     )}
 
-                    {/* Footer */}
-                    <div className="p-4 flex gap-3" style={{ backgroundColor: 'rgba(0,0,0,0.2)' }}>
+                    {/* Footer - Always Visible */}
+                    <div className="modal-footer p-4 flex gap-3" style={{ backgroundColor }}>
                         {!isCreating && monitor && (
                             <button
                                 type="button"
