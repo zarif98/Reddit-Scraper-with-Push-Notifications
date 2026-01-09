@@ -38,7 +38,7 @@ export const DEFAULT_MONITOR: Partial<Monitor> = {
     min_upvotes: null,
     color: DEFAULT_COLORS[0],
     enabled: true,
-    cooldown_minutes: 5,
+    cooldown_minutes: 10,
     max_post_age_hours: 12,
     domain_contains: [],
     domain_excludes: [],

@@ -59,7 +59,7 @@ def load_config():
                 monitor['exclude_keywords'] = []
                 updated = True
             if 'cooldown_minutes' not in monitor:
-                monitor['cooldown_minutes'] = 5
+                monitor['cooldown_minutes'] = 10
                 updated = True
             if 'max_post_age_hours' not in monitor:
                 monitor['max_post_age_hours'] = 12
@@ -222,7 +222,7 @@ def create_monitor():
             'min_upvotes': data.get('min_upvotes'),
             'color': data.get('color', DEFAULT_COLORS[len(monitors) % len(DEFAULT_COLORS)]),
             'enabled': data.get('enabled', True),
-            'cooldown_minutes': data.get('cooldown_minutes', 5),
+            'cooldown_minutes': data.get('cooldown_minutes', 10),
             'max_post_age_hours': data.get('max_post_age_hours', 12),
             'domain_contains': data.get('domain_contains', []),
             'domain_excludes': data.get('domain_excludes', []),

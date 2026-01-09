@@ -644,7 +644,7 @@ export default function MonitorModal({
                                     <div className="settings-row">
                                         <span className="text-white/90">Refresh Interval</span>
                                         <select
-                                            value={formData.cooldown_minutes || 5}
+                                            value={formData.cooldown_minutes || 10}
                                             onChange={(e) => handleInputChange('cooldown_minutes', parseInt(e.target.value))}
                                             className="input-field w-auto bg-white/10"
                                         >

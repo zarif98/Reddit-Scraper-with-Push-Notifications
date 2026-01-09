@@ -243,8 +243,8 @@ def main():
         
         for monitor in enabled_monitors:
             monitor_id = monitor.get('id', monitor.get('subreddit', 'unknown'))
-            # Use cooldown_minutes as the per-monitor refresh interval (default 5 min)
-            refresh_interval = monitor.get('cooldown_minutes', 5) * 60  # Convert to seconds
+            # Use cooldown_minutes as the per-monitor refresh interval (default 10 min)
+            refresh_interval = monitor.get('cooldown_minutes', 10) * 60  # Convert to seconds
             
             last_run = last_run_times.get(monitor_id, 0)
             time_since_last_run = current_time - last_run
@@ -252,7 +252,7 @@ def main():
             if time_since_last_run >= refresh_interval:
                 monitors_to_run.append(monitor)
                 last_run_times[monitor_id] = current_time
-                logging.info(f"Running monitor: {monitor.get('name', monitor.get('subreddit'))} (interval: {monitor.get('cooldown_minutes', 5)} min)")
+                logging.info(f"Running monitor: {monitor.get('name', monitor.get('subreddit'))} (interval: {monitor.get('cooldown_minutes', 10)} min)")
             else:
                 time_remaining = int((refresh_interval - time_since_last_run) / 60)
                 logging.debug(f"Skipping {monitor.get('name', monitor.get('subreddit'))} - {time_remaining} min until next run")
