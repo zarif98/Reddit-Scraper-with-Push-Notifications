@@ -1,14 +1,38 @@
 {
     "subreddits_to_search": [
         {
+            "id": "example-1",
+            "name": "Canon r6",
             "subreddit": "photomarket",
-            "keywords": ["r6"],
-            "cooldown_minutes": 10
+            "keywords": ["r6", "canon"],
+            "exclude_keywords": ["wanted", "wtb"],
+            "min_upvotes": null,
+            "color": "#8B5CF6",
+            "enabled": true,
+            "cooldown_minutes": 10,
+            "max_post_age_hours": 12,
+            "domain_contains": [],
+            "domain_excludes": [],
+            "flair_contains": ["selling"],
+            "author_includes": [],
+            "author_excludes": ["AutoModerator"]
         },
         {
+            "id": "example-2",
+            "name": "Free games",
             "subreddit": "gamedeals",
-            "keywords": ["free"],
-            "cooldown_minutes": 5
+            "keywords": ["free", "100%"],
+            "exclude_keywords": [],
+            "min_upvotes": 10,
+            "color": "#22C55E",
+            "enabled": true,
+            "cooldown_minutes": 2,
+            "max_post_age_hours": 24,
+            "domain_contains": ["epicgames.com", "steam"],
+            "domain_excludes": [],
+            "flair_contains": [],
+            "author_includes": [],
+            "author_excludes": []
         }
     ]
 }
