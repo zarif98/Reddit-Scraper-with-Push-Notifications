@@ -150,6 +150,40 @@ def search_subreddits():
         return jsonify({'subreddits': [], 'error': str(e)})
 
 
+@app.route('/api/subreddits/validate/<subreddit_name>', methods=['GET'])
+def validate_subreddit(subreddit_name):
+    """Validate that a subreddit exists."""
+    if not subreddit_name or len(subreddit_name) < 2:
+        return jsonify({'valid': False, 'error': 'Subreddit name too short'})
+    
+    try:
+        headers = {'User-Agent': 'RedditMonitorWebUI/1.0'}
+        response = requests.get(
+            f'https://www.reddit.com/r/{subreddit_name}/about.json',
+            headers=headers,
+            timeout=5
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            sub_data = data.get('data', {})
+            # Check if it's a valid subreddit (has required fields)
+            if sub_data.get('display_name'):
+                return jsonify({
+                    'valid': True,
+                    'name': sub_data.get('display_name'),
+                    'title': sub_data.get('title', ''),
+                    'subscribers': sub_data.get('subscribers', 0),
+                    'nsfw': sub_data.get('over18', False)
+                })
+        
+        # Subreddit doesn't exist or is private
+        return jsonify({'valid': False, 'error': 'Subreddit not found'})
+    except Exception as e:
+        # On error, allow the subreddit (don't block on network issues)
+        return jsonify({'valid': True, 'error': f'Could not verify: {str(e)}'})
+
+
 @app.route('/api/monitors', methods=['GET'])
 def get_monitors():
     """Get all monitors."""

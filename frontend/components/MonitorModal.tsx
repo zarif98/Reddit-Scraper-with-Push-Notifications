@@ -196,7 +196,9 @@ export default function MonitorModal({
         handleInputChange('author_excludes', authors);
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const [isSaving, setIsSaving] = useState(false);
+
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError(null);
 
@@ -216,6 +218,23 @@ export default function MonitorModal({
             setActiveTab('filters');
             return;
         }
+
+        // Validate subreddit exists
+        setIsSaving(true);
+        try {
+            const response = await fetch(`${API_URL}/api/subreddits/validate/${encodeURIComponent(formData.subreddit)}`);
+            const data = await response.json();
+
+            if (!data.valid) {
+                setError(`Subreddit "r/${formData.subreddit}" doesn't exist. Please select from suggestions.`);
+                setIsSaving(false);
+                return;
+            }
+        } catch (err) {
+            console.error('Failed to validate subreddit:', err);
+            // On error, allow save (don't block on network issues)
+        }
+        setIsSaving(false);
 
         onSave(formData);
     };
@@ -670,8 +689,9 @@ export default function MonitorModal({
                         <button
                             type="submit"
                             className="btn-primary flex-1"
+                            disabled={isSaving}
                         >
-                            ✓ Save
+                            {isSaving ? '⏳ Validating...' : '✓ Save'}
                         </button>
                     </div>
                 </form>
