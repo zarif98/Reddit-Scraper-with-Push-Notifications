@@ -9,6 +9,12 @@ export interface Monitor {
     enabled: boolean;
     cooldown_minutes: number;
     max_post_age_hours: number;
+    // New filter fields
+    domain_contains: string[];
+    domain_excludes: string[];
+    flair_contains: string[];
+    author_includes: string[];
+    author_excludes: string[];
 }
 
 export const DEFAULT_COLORS = [
@@ -34,4 +40,9 @@ export const DEFAULT_MONITOR: Partial<Monitor> = {
     enabled: true,
     cooldown_minutes: 5,
     max_post_age_hours: 12,
+    domain_contains: [],
+    domain_excludes: [],
+    flair_contains: [],
+    author_includes: [],
+    author_excludes: [],
 };

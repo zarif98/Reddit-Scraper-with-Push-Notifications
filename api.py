@@ -63,6 +63,22 @@ def load_config():
             if 'max_post_age_hours' not in monitor:
                 monitor['max_post_age_hours'] = 12
                 updated = True
+            # New filter fields
+            if 'domain_contains' not in monitor:
+                monitor['domain_contains'] = []
+                updated = True
+            if 'domain_excludes' not in monitor:
+                monitor['domain_excludes'] = []
+                updated = True
+            if 'flair_contains' not in monitor:
+                monitor['flair_contains'] = []
+                updated = True
+            if 'author_includes' not in monitor:
+                monitor['author_includes'] = []
+                updated = True
+            if 'author_excludes' not in monitor:
+                monitor['author_excludes'] = []
+                updated = True
         
         # Save if we added any fields
         if updated:
@@ -137,7 +153,12 @@ def create_monitor():
             'color': data.get('color', DEFAULT_COLORS[len(monitors) % len(DEFAULT_COLORS)]),
             'enabled': data.get('enabled', True),
             'cooldown_minutes': data.get('cooldown_minutes', 5),
-            'max_post_age_hours': data.get('max_post_age_hours', 12)
+            'max_post_age_hours': data.get('max_post_age_hours', 12),
+            'domain_contains': data.get('domain_contains', []),
+            'domain_excludes': data.get('domain_excludes', []),
+            'flair_contains': data.get('flair_contains', []),
+            'author_includes': data.get('author_includes', []),
+            'author_excludes': data.get('author_excludes', [])
         }
         
         monitors.append(new_monitor)
@@ -198,6 +219,17 @@ def update_monitor(monitor_id):
                     monitors[i]['cooldown_minutes'] = data['cooldown_minutes']
                 if 'max_post_age_hours' in data:
                     monitors[i]['max_post_age_hours'] = data['max_post_age_hours']
+                # New filter fields
+                if 'domain_contains' in data:
+                    monitors[i]['domain_contains'] = data['domain_contains']
+                if 'domain_excludes' in data:
+                    monitors[i]['domain_excludes'] = data['domain_excludes']
+                if 'flair_contains' in data:
+                    monitors[i]['flair_contains'] = data['flair_contains']
+                if 'author_includes' in data:
+                    monitors[i]['author_includes'] = data['author_includes']
+                if 'author_excludes' in data:
+                    monitors[i]['author_excludes'] = data['author_excludes']
                 
                 config['subreddits_to_search'] = monitors
                 save_config(config)

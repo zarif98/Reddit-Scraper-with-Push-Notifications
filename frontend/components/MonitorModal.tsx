@@ -25,6 +25,11 @@ export default function MonitorModal({
     const [formData, setFormData] = useState<Partial<Monitor>>(DEFAULT_MONITOR);
     const [newKeyword, setNewKeyword] = useState('');
     const [newExcludeKeyword, setNewExcludeKeyword] = useState('');
+    const [newDomainContains, setNewDomainContains] = useState('');
+    const [newDomainExcludes, setNewDomainExcludes] = useState('');
+    const [newFlairContains, setNewFlairContains] = useState('');
+    const [newAuthorIncludes, setNewAuthorIncludes] = useState('');
+    const [newAuthorExcludes, setNewAuthorExcludes] = useState('');
 
     useEffect(() => {
         if (monitor) {
@@ -65,6 +70,67 @@ export default function MonitorModal({
     const removeExcludeKeyword = (index: number) => {
         const keywords = (formData.exclude_keywords || []).filter((_, i) => i !== index);
         handleInputChange('exclude_keywords', keywords);
+    };
+
+    // Domain filters
+    const addDomainContains = () => {
+        if (newDomainContains.trim()) {
+            const domains = [...(formData.domain_contains || []), newDomainContains.trim().toLowerCase()];
+            handleInputChange('domain_contains', domains);
+            setNewDomainContains('');
+        }
+    };
+    const removeDomainContains = (index: number) => {
+        const domains = (formData.domain_contains || []).filter((_, i) => i !== index);
+        handleInputChange('domain_contains', domains);
+    };
+    const addDomainExcludes = () => {
+        if (newDomainExcludes.trim()) {
+            const domains = [...(formData.domain_excludes || []), newDomainExcludes.trim().toLowerCase()];
+            handleInputChange('domain_excludes', domains);
+            setNewDomainExcludes('');
+        }
+    };
+    const removeDomainExcludes = (index: number) => {
+        const domains = (formData.domain_excludes || []).filter((_, i) => i !== index);
+        handleInputChange('domain_excludes', domains);
+    };
+
+    // Flair filter
+    const addFlairContains = () => {
+        if (newFlairContains.trim()) {
+            const flairs = [...(formData.flair_contains || []), newFlairContains.trim()];
+            handleInputChange('flair_contains', flairs);
+            setNewFlairContains('');
+        }
+    };
+    const removeFlairContains = (index: number) => {
+        const flairs = (formData.flair_contains || []).filter((_, i) => i !== index);
+        handleInputChange('flair_contains', flairs);
+    };
+
+    // Author filters
+    const addAuthorIncludes = () => {
+        if (newAuthorIncludes.trim()) {
+            const authors = [...(formData.author_includes || []), newAuthorIncludes.trim().toLowerCase()];
+            handleInputChange('author_includes', authors);
+            setNewAuthorIncludes('');
+        }
+    };
+    const removeAuthorIncludes = (index: number) => {
+        const authors = (formData.author_includes || []).filter((_, i) => i !== index);
+        handleInputChange('author_includes', authors);
+    };
+    const addAuthorExcludes = () => {
+        if (newAuthorExcludes.trim()) {
+            const authors = [...(formData.author_excludes || []), newAuthorExcludes.trim().toLowerCase()];
+            handleInputChange('author_excludes', authors);
+            setNewAuthorExcludes('');
+        }
+    };
+    const removeAuthorExcludes = (index: number) => {
+        const authors = (formData.author_excludes || []).filter((_, i) => i !== index);
+        handleInputChange('author_excludes', authors);
     };
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -244,6 +310,186 @@ export default function MonitorModal({
                                         className="input-field w-32"
                                         min="0"
                                     />
+                                </div>
+
+                                {/* Domain Contains */}
+                                <div>
+                                    <label className="text-sm text-white/70 mb-2 block">🌐 Domain Contains</label>
+                                    <div className="flex flex-wrap gap-2 mb-2">
+                                        {(formData.domain_contains || []).map((domain, index) => (
+                                            <span key={index} className="filter-chip">
+                                                🔗 {domain}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removeDomainContains(index)}
+                                                    className="ml-1 text-white/60 hover:text-white"
+                                                >
+                                                    ×
+                                                </button>
+                                            </span>
+                                        ))}
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="text"
+                                            value={newDomainContains}
+                                            onChange={(e) => setNewDomainContains(e.target.value)}
+                                            onKeyDown={(e) => handleKeyDown(e, addDomainContains)}
+                                            placeholder="e.g. amazon.com"
+                                            className="input-field flex-1"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={addDomainContains}
+                                            className="btn-icon"
+                                        >
+                                            +
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Domain Excludes */}
+                                <div>
+                                    <label className="text-sm text-white/70 mb-2 block">🚫 Domain Excludes</label>
+                                    <div className="flex flex-wrap gap-2 mb-2">
+                                        {(formData.domain_excludes || []).map((domain, index) => (
+                                            <span key={index} className="filter-chip exclude">
+                                                🔗 {domain}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removeDomainExcludes(index)}
+                                                    className="ml-1 text-white/60 hover:text-white"
+                                                >
+                                                    ×
+                                                </button>
+                                            </span>
+                                        ))}
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="text"
+                                            value={newDomainExcludes}
+                                            onChange={(e) => setNewDomainExcludes(e.target.value)}
+                                            onKeyDown={(e) => handleKeyDown(e, addDomainExcludes)}
+                                            placeholder="Exclude domain..."
+                                            className="input-field flex-1"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={addDomainExcludes}
+                                            className="btn-icon"
+                                        >
+                                            +
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Flair Contains */}
+                                <div>
+                                    <label className="text-sm text-white/70 mb-2 block">🏷️ Flair Contains</label>
+                                    <div className="flex flex-wrap gap-2 mb-2">
+                                        {(formData.flair_contains || []).map((flair, index) => (
+                                            <span key={index} className="filter-chip">
+                                                🏷️ {flair}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removeFlairContains(index)}
+                                                    className="ml-1 text-white/60 hover:text-white"
+                                                >
+                                                    ×
+                                                </button>
+                                            </span>
+                                        ))}
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="text"
+                                            value={newFlairContains}
+                                            onChange={(e) => setNewFlairContains(e.target.value)}
+                                            onKeyDown={(e) => handleKeyDown(e, addFlairContains)}
+                                            placeholder="e.g. Sale, Deal"
+                                            className="input-field flex-1"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={addFlairContains}
+                                            className="btn-icon"
+                                        >
+                                            +
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Author Includes */}
+                                <div>
+                                    <label className="text-sm text-white/70 mb-2 block">👤 Only from Authors</label>
+                                    <div className="flex flex-wrap gap-2 mb-2">
+                                        {(formData.author_includes || []).map((author, index) => (
+                                            <span key={index} className="filter-chip">
+                                                👤 {author}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removeAuthorIncludes(index)}
+                                                    className="ml-1 text-white/60 hover:text-white"
+                                                >
+                                                    ×
+                                                </button>
+                                            </span>
+                                        ))}
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="text"
+                                            value={newAuthorIncludes}
+                                            onChange={(e) => setNewAuthorIncludes(e.target.value)}
+                                            onKeyDown={(e) => handleKeyDown(e, addAuthorIncludes)}
+                                            placeholder="Username..."
+                                            className="input-field flex-1"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={addAuthorIncludes}
+                                            className="btn-icon"
+                                        >
+                                            +
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Author Excludes */}
+                                <div>
+                                    <label className="text-sm text-white/70 mb-2 block">🚫 Exclude Authors</label>
+                                    <div className="flex flex-wrap gap-2 mb-2">
+                                        {(formData.author_excludes || []).map((author, index) => (
+                                            <span key={index} className="filter-chip exclude">
+                                                👤 {author}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removeAuthorExcludes(index)}
+                                                    className="ml-1 text-white/60 hover:text-white"
+                                                >
+                                                    ×
+                                                </button>
+                                            </span>
+                                        ))}
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="text"
+                                            value={newAuthorExcludes}
+                                            onChange={(e) => setNewAuthorExcludes(e.target.value)}
+                                            onKeyDown={(e) => handleKeyDown(e, addAuthorExcludes)}
+                                            placeholder="Username to exclude..."
+                                            className="input-field flex-1"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={addAuthorExcludes}
+                                            className="btn-icon"
+                                        >
+                                            +
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         )}
