@@ -2,12 +2,22 @@
 
 interface SetupRequiredProps {
     onOpenSettings: () => void;
+    onDismiss?: () => void;
 }
 
-export default function SetupRequired({ onOpenSettings }: SetupRequiredProps) {
+export default function SetupRequired({ onOpenSettings, onDismiss }: SetupRequiredProps) {
     return (
         <div className="min-h-screen flex items-center justify-center p-4">
-            <div className="bg-[#16213e] rounded-2xl p-8 max-w-md w-full text-center shadow-2xl">
+            <div className="bg-[#16213e] rounded-2xl p-8 max-w-md w-full text-center shadow-2xl relative">
+                {onDismiss && (
+                    <button
+                        onClick={onDismiss}
+                        className="absolute top-3 right-3 w-8 h-8 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white/60 hover:text-white transition-colors"
+                        aria-label="Dismiss"
+                    >
+                        ✕
+                    </button>
+                )}
                 <div className="text-6xl mb-4">🔧</div>
                 <h1 className="text-2xl font-bold text-white mb-2">Setup Required</h1>
                 <p className="text-white/70 mb-6">
@@ -38,6 +48,15 @@ export default function SetupRequired({ onOpenSettings }: SetupRequiredProps) {
                 >
                     ⚙️ Configure Settings
                 </button>
+
+                {onDismiss && (
+                    <button
+                        onClick={onDismiss}
+                        className="mt-3 text-sm text-white/40 hover:text-white/60 transition-colors"
+                    >
+                        Skip for now →
+                    </button>
+                )}
             </div>
         </div>
     );

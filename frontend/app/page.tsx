@@ -121,13 +121,19 @@ export default function Home() {
   const handleSettingsSave = () => {
     checkCredentials();
     fetchMonitors();
+    setShowSetupScreen(false);
   };
 
-  // Show setup screen if not configured
-  if (isConfigured === false) {
+  const [showSetupScreen, setShowSetupScreen] = useState(true);
+
+  // Show setup screen if not configured and not dismissed
+  if (isConfigured === false && showSetupScreen) {
     return (
       <>
-        <SetupRequired onOpenSettings={() => setIsSettingsOpen(true)} />
+        <SetupRequired
+          onOpenSettings={() => setIsSettingsOpen(true)}
+          onDismiss={() => setShowSetupScreen(false)}
+        />
         {isSettingsOpen && (
           <SettingsModal
             onClose={() => setIsSettingsOpen(false)}
@@ -163,6 +169,24 @@ export default function Home() {
           </div>
         </div>
       </header>
+
+      {/* Warning Banner - when credentials not configured */}
+      {isConfigured === false && (
+        <div className="bg-yellow-500/20 border-b border-yellow-500/30">
+          <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-yellow-200 text-sm">
+              <span>⚠️</span>
+              <span>Bot won't work without credentials configured</span>
+            </div>
+            <button
+              onClick={() => setIsSettingsOpen(true)}
+              className="text-xs bg-yellow-500/30 hover:bg-yellow-500/50 px-3 py-1 rounded-full text-yellow-100 whitespace-nowrap"
+            >
+              Configure
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Content */}
       <div className="max-w-lg mx-auto px-4 py-6">
