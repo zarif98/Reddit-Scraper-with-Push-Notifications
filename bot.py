@@ -58,11 +58,19 @@ class RedditMonitor:
     processed_submissions_file = PROCESSED_SUBMISSIONS_FILE_PATH
     max_file_size = 5 * 1024 * 1024  # 5 MB
 
-    def __init__(self, reddit, subreddit, keywords, min_upvotes=None):
+    def __init__(self, reddit, subreddit, keywords, min_upvotes=None, exclude_keywords=None, 
+                 domain_contains=None, domain_excludes=None, flair_contains=None,
+                 author_includes=None, author_excludes=None, **kwargs):
         self.reddit = reddit
         self.subreddit = subreddit
         self.keywords = keywords
         self.min_upvotes = min_upvotes
+        self.exclude_keywords = exclude_keywords or []
+        self.domain_contains = domain_contains or []
+        self.domain_excludes = domain_excludes or []
+        self.flair_contains = flair_contains or []
+        self.author_includes = author_includes or []
+        self.author_excludes = author_excludes or []
         self.load_processed_submissions()
 
     def send_push_notification(self, message):
@@ -131,9 +139,29 @@ class RedditMonitor:
                           f"Upvotes: {submission.score}\n" \
                           f"Permalink: https://www.reddit.com{submission.permalink}\n" \
                           ##f"Author: {submission.author.name}"
-
-                if all(keyword in submission.title.lower() for keyword in self.keywords) and \
-                        (self.min_upvotes is None or submission.score >= self.min_upvotes):
+                # Check if title contains all required keywords and none of the excluded ones
+                title_lower = submission.title.lower()
+                has_all_keywords = all(keyword in title_lower for keyword in self.keywords)
+                has_excluded = any(keyword in title_lower for keyword in self.exclude_keywords)
+                meets_upvotes = self.min_upvotes is None or submission.score >= self.min_upvotes
+                
+                # Domain filters
+                submission_domain = submission.domain.lower() if hasattr(submission, 'domain') else ''
+                meets_domain_contains = not self.domain_contains or any(d in submission_domain for d in self.domain_contains)
+                meets_domain_excludes = not any(d in submission_domain for d in self.domain_excludes)
+                
+                # Flair filter
+                submission_flair = (submission.link_flair_text or '').lower() if hasattr(submission, 'link_flair_text') else ''
+                meets_flair = not self.flair_contains or any(f.lower() in submission_flair for f in self.flair_contains)
+                
+                # Author filters
+                author_name = submission.author.name.lower() if submission.author else ''
+                meets_author_includes = not self.author_includes or author_name in [a.lower() for a in self.author_includes]
+                meets_author_excludes = author_name not in [a.lower() for a in self.author_excludes]
+                
+                if (has_all_keywords and not has_excluded and meets_upvotes and 
+                    meets_domain_contains and meets_domain_excludes and 
+                    meets_flair and meets_author_includes and meets_author_excludes):
                     logging.info(message)
                     self.send_push_notification(message)
                     logging.info('-' * 40)
@@ -205,9 +233,12 @@ def main():
             else:
                 logging.warning("Failed to reload configuration, using previous settings.")
 
+        # Filter to only enabled monitors
+        enabled_monitors = [m for m in subreddits_to_search if m.get('enabled', True)]
+        
         with ThreadPoolExecutor() as executor:
             # Use list comprehension to store futures and handle exceptions separately
-            futures = [executor.submit(RedditMonitor(reddit, **params).search_reddit_for_keywords) for params in subreddits_to_search]
+            futures = [executor.submit(RedditMonitor(reddit, **params).search_reddit_for_keywords) for params in enabled_monitors]
 
             # Handle exceptions from each future separately
             for future in futures:

@@ -1,9 +1,97 @@
 {
     "subreddits_to_search": [
-        {"subreddit": "photomarket", "keywords": ["r6"]},
-        {"subreddit": "frugalmalefashion", "keywords": ["porter"]},
-        {"subreddit": "gamedeals", "keywords": ["prime"]},
-        {"subreddit": "gamedeals", "keywords": ["free"]}
+        {
+            "subreddit": "photomarket",
+            "keywords": [
+                "r6"
+            ],
+            "id": "f2422606-d931-4b37-b454-0c586149b1b9",
+            "name": "Canon r6",
+            "color": "#8B5CF6",
+            "enabled": true,
+            "exclude_keywords": [],
+            "cooldown_minutes": 5,
+            "max_post_age_hours": 12,
+            "domain_contains": [],
+            "domain_excludes": [],
+            "flair_contains": [],
+            "author_includes": [],
+            "author_excludes": []
+        },
+        {
+            "subreddit": "frugalmalefashion",
+            "keywords": [
+                "porter"
+            ],
+            "id": "e85d8622-78df-41eb-9d22-633c3e521418",
+            "name": "r/frugalmalefashion",
+            "color": "#3B82F6",
+            "enabled": true,
+            "exclude_keywords": [],
+            "cooldown_minutes": 5,
+            "max_post_age_hours": 12,
+            "domain_contains": [],
+            "domain_excludes": [],
+            "flair_contains": [],
+            "author_includes": [],
+            "author_excludes": []
+        },
+        {
+            "subreddit": "gamedeals",
+            "keywords": [
+                "prime"
+            ],
+            "id": "184345a0-4c2d-4abb-b594-c0eadd14950f",
+            "name": "Amazon Prime gaming",
+            "color": "#22C55E",
+            "enabled": true,
+            "exclude_keywords": [],
+            "cooldown_minutes": 5,
+            "max_post_age_hours": 12,
+            "domain_contains": [],
+            "domain_excludes": [],
+            "flair_contains": [],
+            "author_includes": [],
+            "author_excludes": []
+        },
+        {
+            "subreddit": "gamedeals",
+            "keywords": [
+                "free"
+            ],
+            "id": "24d6c15e-4975-4ba9-bef8-097ff6e0d06d",
+            "name": "Free games",
+            "color": "#EF4444",
+            "enabled": true,
+            "exclude_keywords": [],
+            "cooldown_minutes": 5,
+            "max_post_age_hours": 12,
+            "domain_contains": [],
+            "domain_excludes": [],
+            "flair_contains": [],
+            "author_includes": [],
+            "author_excludes": [],
+            "min_upvotes": 100
+        },
+        {
+            "id": "a68d1d25-3975-4dea-ba19-6d5239a2ef12",
+            "name": "Red dead redemption",
+            "subreddit": "gamedeals",
+            "keywords": [
+                "read dead redemption"
+            ],
+            "exclude_keywords": [],
+            "min_upvotes": null,
+            "color": "#10B981",
+            "enabled": true,
+            "cooldown_minutes": 5,
+            "max_post_age_hours": 12,
+            "domain_contains": [],
+            "domain_excludes": [],
+            "flair_contains": [],
+            "author_includes": [],
+            "author_excludes": []
+        }
     ],
     "iteration_time_minutes": 10
 }

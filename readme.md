@@ -57,6 +57,26 @@ This is what your .env file should look like
 ![Env file example](SCR-20240714-kyky.png "Env file example")
 
 
+## Web Interface (New!)
+
+Manage your monitors with a beautiful web UI instead of editing JSON files.
+
+1. **Start the Backend API**:
+   ```bash
+   python api.py
+   ```
+   *Runs on http://localhost:5001*
+
+2. **Start the Frontend**:
+   ```bash
+   cd frontend
+   npm run dev
+   ```
+   *Runs on http://localhost:3000*
+
+3. **Access from Mobile**:
+   Open `http://<YOUR_NAS_IP>:3000` on your phone.
+
 ## Usage
 Run the script using the following command:
 
