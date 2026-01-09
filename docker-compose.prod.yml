@@ -1,0 +1,48 @@
+version: '3.8'
+
+# Production docker-compose for Synology NAS / Portainer
+# Uses pre-built images from GitHub Container Registry
+#
+# Usage:
+#   HOST_IP=192.168.1.X WEB_PORT=8080 API_PORT=5001 docker-compose -f docker-compose.prod.yml up -d
+#
+# Or set these in Portainer's environment variables
+
+services:
+  # Reddit Bot - monitors subreddits and sends notifications
+  bot:
+    image: ghcr.io/zarif98/reddit-scraper-with-push-notifications:latest
+    container_name: reddit-bot
+    command: [ "python", "bot.py" ]
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - DATA_DIR=/data
+    volumes:
+      - ./data:/data
+    depends_on:
+      - api
+
+  # API Server - manages search.json configuration
+  api:
+    image: ghcr.io/zarif98/reddit-scraper-with-push-notifications:latest
+    container_name: reddit-api
+    command: [ "python", "api.py" ]
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-5001}:5001"
+    environment:
+      - DATA_DIR=/data
+    volumes:
+      - ./data:/data
+
+  # Web UI - Next.js frontend
+  frontend:
+    image: ghcr.io/zarif98/reddit-scraper-with-push-notifications:frontend
+    container_name: reddit-frontend
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    depends_on:
+      - api
