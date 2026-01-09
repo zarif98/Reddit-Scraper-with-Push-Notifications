@@ -214,9 +214,11 @@ def main():
         exit(1)
     
     subreddits_to_search = config.get('subreddits_to_search', [])
-    iteration_time_minutes = config.get('iteration_time_minutes', 5)
     last_config_mtime = get_config_mtime()
-
+    
+    # Track last run time for each monitor by ID
+    last_run_times = {}
+    
     loopTime = 0
     while True:
         # Check if config file has been modified
@@ -227,7 +229,6 @@ def main():
             if new_config is not None:
                 config = new_config
                 subreddits_to_search = config.get('subreddits_to_search', [])
-                iteration_time_minutes = config.get('iteration_time_minutes', 5)
                 last_config_mtime = current_mtime
                 logging.info("Configuration reloaded successfully.")
             else:
@@ -236,26 +237,45 @@ def main():
         # Filter to only enabled monitors
         enabled_monitors = [m for m in subreddits_to_search if m.get('enabled', True)]
         
-        with ThreadPoolExecutor() as executor:
-            # Use list comprehension to store futures and handle exceptions separately
-            futures = [executor.submit(RedditMonitor(reddit, **params).search_reddit_for_keywords) for params in enabled_monitors]
+        # Determine which monitors are due to run based on their refresh interval
+        current_time = time.time()
+        monitors_to_run = []
+        
+        for monitor in enabled_monitors:
+            monitor_id = monitor.get('id', monitor.get('subreddit', 'unknown'))
+            # Use cooldown_minutes as the per-monitor refresh interval (default 5 min)
+            refresh_interval = monitor.get('cooldown_minutes', 5) * 60  # Convert to seconds
+            
+            last_run = last_run_times.get(monitor_id, 0)
+            time_since_last_run = current_time - last_run
+            
+            if time_since_last_run >= refresh_interval:
+                monitors_to_run.append(monitor)
+                last_run_times[monitor_id] = current_time
+                logging.info(f"Running monitor: {monitor.get('name', monitor.get('subreddit'))} (interval: {monitor.get('cooldown_minutes', 5)} min)")
+            else:
+                time_remaining = int((refresh_interval - time_since_last_run) / 60)
+                logging.debug(f"Skipping {monitor.get('name', monitor.get('subreddit'))} - {time_remaining} min until next run")
+        
+        if monitors_to_run:
+            with ThreadPoolExecutor() as executor:
+                futures = [executor.submit(RedditMonitor(reddit, **params).search_reddit_for_keywords) for params in monitors_to_run]
 
-            # Handle exceptions from each future separately
-            for future in futures:
-                try:
-                    future.result()
-                except Exception as e:
-                    error_message = f"Error during subreddit search: {e}"
-                    logging.error(error_message)
-                    # Send an error notification for each subreddit search failure
-                    RedditMonitor(reddit).send_error_notification(error_message)
+                for future in futures:
+                    try:
+                        future.result()
+                    except Exception as e:
+                        error_message = f"Error during subreddit search: {e}"
+                        logging.error(error_message)
+                        RedditMonitor(reddit, subreddit='error', keywords=[]).send_error_notification(error_message)
+        else:
+            logging.debug("No monitors due to run this cycle")
 
-        # Add a delay before the next iteration
-        iterationTime = iteration_time_minutes * 60  # seconds
-        logging.info(f"Waiting {iteration_time_minutes} minutes before the next iteration...")
-        logging.info(f"We have looped {loopTime} times")
+        # Short sleep between checks (1 minute base cycle)
+        logging.info(f"Cycle {loopTime} complete. Sleeping for 1 minute before next check...")
         loopTime += 1
-        time.sleep(iterationTime)
+        time.sleep(60)  # Check every minute, but monitors run on their own schedules
 
 if __name__ == "__main__":
     main()
+

@@ -642,13 +642,14 @@ export default function MonitorModal({
                             {activeTab === 'settings' && (
                                 <div className="space-y-2">
                                     <div className="settings-row">
-                                        <span className="text-white/90">Cooldown</span>
+                                        <span className="text-white/90">Refresh Interval</span>
                                         <select
                                             value={formData.cooldown_minutes || 5}
                                             onChange={(e) => handleInputChange('cooldown_minutes', parseInt(e.target.value))}
                                             className="input-field w-auto bg-white/10"
                                         >
                                             <option value={1}>1 Minute</option>
+                                            <option value={2}>2 Minutes</option>
                                             <option value={5}>5 Minutes</option>
                                             <option value={10}>10 Minutes</option>
                                             <option value={15}>15 Minutes</option>
