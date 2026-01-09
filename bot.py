@@ -58,11 +58,12 @@ class RedditMonitor:
     processed_submissions_file = PROCESSED_SUBMISSIONS_FILE_PATH
     max_file_size = 5 * 1024 * 1024  # 5 MB
 
-    def __init__(self, reddit, subreddit, keywords, min_upvotes=None):
+    def __init__(self, reddit, subreddit, keywords, min_upvotes=None, exclude_keywords=None, **kwargs):
         self.reddit = reddit
         self.subreddit = subreddit
         self.keywords = keywords
         self.min_upvotes = min_upvotes
+        self.exclude_keywords = exclude_keywords or []
         self.load_processed_submissions()
 
     def send_push_notification(self, message):
@@ -131,9 +132,13 @@ class RedditMonitor:
                           f"Upvotes: {submission.score}\n" \
                           f"Permalink: https://www.reddit.com{submission.permalink}\n" \
                           ##f"Author: {submission.author.name}"
-
-                if all(keyword in submission.title.lower() for keyword in self.keywords) and \
-                        (self.min_upvotes is None or submission.score >= self.min_upvotes):
+                # Check if title contains all required keywords and none of the excluded ones
+                title_lower = submission.title.lower()
+                has_all_keywords = all(keyword in title_lower for keyword in self.keywords)
+                has_excluded = any(keyword in title_lower for keyword in self.exclude_keywords)
+                meets_upvotes = self.min_upvotes is None or submission.score >= self.min_upvotes
+                
+                if has_all_keywords and not has_excluded and meets_upvotes:
                     logging.info(message)
                     self.send_push_notification(message)
                     logging.info('-' * 40)
@@ -205,9 +210,12 @@ def main():
             else:
                 logging.warning("Failed to reload configuration, using previous settings.")
 
+        # Filter to only enabled monitors
+        enabled_monitors = [m for m in subreddits_to_search if m.get('enabled', True)]
+        
         with ThreadPoolExecutor() as executor:
             # Use list comprehension to store futures and handle exceptions separately
-            futures = [executor.submit(RedditMonitor(reddit, **params).search_reddit_for_keywords) for params in subreddits_to_search]
+            futures = [executor.submit(RedditMonitor(reddit, **params).search_reddit_for_keywords) for params in enabled_monitors]
 
             # Handle exceptions from each future separately
             for future in futures:
