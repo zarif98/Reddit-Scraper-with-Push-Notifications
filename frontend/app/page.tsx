@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import MonitorCard from '@/components/MonitorCard';
 import MonitorModal from '@/components/MonitorModal';
+import SettingsModal from '@/components/SettingsModal';
+import SetupRequired from '@/components/SetupRequired';
 import { Monitor } from '@/types/monitor';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
@@ -14,6 +16,19 @@ export default function Home() {
   const [selectedMonitor, setSelectedMonitor] = useState<Monitor | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isConfigured, setIsConfigured] = useState<boolean | null>(null);
+
+  const checkCredentials = async () => {
+    try {
+      const response = await fetch(`${API_URL}/api/credentials/status`);
+      const data = await response.json();
+      setIsConfigured(data.configured);
+    } catch (err) {
+      // If API is down, assume configured (use env vars)
+      setIsConfigured(true);
+    }
+  };
 
   const fetchMonitors = async () => {
     try {
@@ -31,6 +46,7 @@ export default function Home() {
   };
 
   useEffect(() => {
+    checkCredentials();
     fetchMonitors();
   }, []);
 
@@ -85,7 +101,6 @@ export default function Home() {
       fetchMonitors();
     } catch (err) {
       console.error('Save error:', err);
-      alert('Failed to save monitor');
     }
   };
 
@@ -103,19 +118,49 @@ export default function Home() {
     }
   };
 
+  const handleSettingsSave = () => {
+    checkCredentials();
+    fetchMonitors();
+  };
+
+  // Show setup screen if not configured
+  if (isConfigured === false) {
+    return (
+      <>
+        <SetupRequired onOpenSettings={() => setIsSettingsOpen(true)} />
+        {isSettingsOpen && (
+          <SettingsModal
+            onClose={() => setIsSettingsOpen(false)}
+            onSave={handleSettingsSave}
+          />
+        )}
+      </>
+    );
+  }
+
   return (
     <main className="min-h-screen pb-20">
       {/* Header */}
       <header className="sticky top-0 z-50 backdrop-blur-md bg-[#1a1a2e]/90 border-b border-white/10">
         <div className="max-w-lg mx-auto px-4 py-4 flex justify-between items-center">
           <h1 className="text-2xl font-bold">Monitors</h1>
-          <button
-            className="add-btn"
-            onClick={handleCreateNew}
-            aria-label="Add new monitor"
-          >
-            +
-          </button>
+          <div className="flex gap-2">
+            <button
+              className="btn-icon"
+              onClick={() => setIsSettingsOpen(true)}
+              aria-label="Settings"
+              title="Settings"
+            >
+              ⚙️
+            </button>
+            <button
+              className="add-btn"
+              onClick={handleCreateNew}
+              aria-label="Add new monitor"
+            >
+              +
+            </button>
+          </div>
         </div>
       </header>
 
@@ -168,7 +213,7 @@ export default function Home() {
         )}
       </div>
 
-      {/* Modal */}
+      {/* Monitor Modal */}
       {isModalOpen && (
         <MonitorModal
           monitor={selectedMonitor}
@@ -176,6 +221,14 @@ export default function Home() {
           onClose={() => setIsModalOpen(false)}
           onSave={handleSave}
           onDelete={handleDelete}
+        />
+      )}
+
+      {/* Settings Modal */}
+      {isSettingsOpen && (
+        <SettingsModal
+          onClose={() => setIsSettingsOpen(false)}
+          onSave={handleSettingsSave}
         />
       )}
     </main>

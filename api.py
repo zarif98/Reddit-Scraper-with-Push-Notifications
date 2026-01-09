@@ -328,21 +328,105 @@ def delete_monitor(monitor_id):
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/settings', methods=['GET'])
-def get_settings():
-    """Get global settings (deprecated - using per-monitor intervals now)."""
-    return jsonify({'message': 'Global settings deprecated. Use per-monitor refresh intervals.'})
+# Credentials file path
+CREDENTIALS_FILE_PATH = os.path.join(DATA_DIR, 'credentials.json')
 
 
-@app.route('/api/settings', methods=['PUT'])
-def update_settings():
-    """Update global settings (deprecated)."""
-    return jsonify({'message': 'Global settings deprecated. Use per-monitor refresh intervals.'})
+def load_credentials():
+    """Load credentials from credentials.json file."""
+    try:
+        with open(CREDENTIALS_FILE_PATH, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
+    except json.JSONDecodeError:
+        return {}
+
+
+def save_credentials(credentials):
+    """Save credentials to credentials.json file."""
+    with open(CREDENTIALS_FILE_PATH, 'w') as f:
+        json.dump(credentials, f, indent=4)
+
+
+def is_configured():
+    """Check if essential credentials are configured."""
+    creds = load_credentials()
+    required = ['reddit_client_id', 'reddit_client_secret', 'pushover_app_token', 'pushover_user_key']
+    return all(creds.get(key) for key in required)
+
+
+@app.route('/api/credentials/status', methods=['GET'])
+def get_credentials_status():
+    """Check if credentials are configured (without exposing them)."""
+    creds = load_credentials()
+    return jsonify({
+        'configured': is_configured(),
+        'has_reddit': bool(creds.get('reddit_client_id') and creds.get('reddit_client_secret')),
+        'has_pushover': bool(creds.get('pushover_app_token') and creds.get('pushover_user_key')),
+        'has_reddit_username': bool(creds.get('reddit_username')),
+    })
+
+
+@app.route('/api/credentials', methods=['GET'])
+def get_credentials():
+    """Get credentials (masked for security)."""
+    creds = load_credentials()
+    # Return masked versions
+    return jsonify({
+        'reddit_client_id': mask_value(creds.get('reddit_client_id', '')),
+        'reddit_client_secret': mask_value(creds.get('reddit_client_secret', '')),
+        'reddit_username': creds.get('reddit_username', ''),
+        'reddit_password': mask_value(creds.get('reddit_password', '')),
+        'reddit_user_agent': creds.get('reddit_user_agent', ''),
+        'pushover_app_token': mask_value(creds.get('pushover_app_token', '')),
+        'pushover_user_key': mask_value(creds.get('pushover_user_key', '')),
+    })
+
+
+def mask_value(value):
+    """Mask a sensitive value, showing only first 4 chars."""
+    if not value or len(value) < 8:
+        return '••••••••' if value else ''
+    return value[:4] + '••••••••'
+
+
+@app.route('/api/credentials', methods=['PUT'])
+def update_credentials():
+    """Update credentials."""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        creds = load_credentials()
+        
+        # Only update fields that are provided and not masked
+        fields = ['reddit_client_id', 'reddit_client_secret', 'reddit_username', 
+                  'reddit_password', 'reddit_user_agent', 'pushover_app_token', 'pushover_user_key']
+        
+        for field in fields:
+            if field in data:
+                value = data[field]
+                # Don't save masked values
+                if value and '••••' not in value:
+                    creds[field] = value
+        
+        save_credentials(creds)
+        
+        return jsonify({
+            'success': True,
+            'configured': is_configured()
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':
     print(f"📡 Reddit Monitor API starting...")
     print(f"📁 Config file: {CONFIG_FILE_PATH}")
+    print(f"🔐 Credentials file: {CREDENTIALS_FILE_PATH}")
     print(f"🌐 API available at: http://0.0.0.0:5001")
     print(f"📱 Access from other devices using your local IP")
     app.run(host='0.0.0.0', port=5001, debug=True)
+

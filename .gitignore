@@ -2,3 +2,5 @@
 *.pkl
 *.tar
 search.json
+credentials.json
+data/

@@ -47,12 +47,47 @@ logging.basicConfig(level=logging.INFO, handlers=[handler])
 # Load environment variables from .env file
 load_dotenv()
 
-# Check if all necessary environment variables are loaded
-required_env_vars = ['PUSHOVER_APP_TOKEN', 'PUSHOVER_USER_KEY', 'REDDIT_CLIENT_ID', 'REDDIT_CLIENT_SECRET', 'REDDIT_USER_AGENT', 'REDDIT_USERNAME', 'REDDIT_PASSWORD']
-for var in required_env_vars:
-    if os.getenv(var) is None:
-        logging.error(f'Missing required environment variable: {var}')
-        exit(1)
+# Credentials file path
+CREDENTIALS_FILE_PATH = os.path.join(DATA_DIR, 'credentials.json')
+
+
+def load_credentials():
+    """Load credentials from credentials.json file with env var fallback."""
+    creds = {}
+    
+    # Try to load from credentials file first
+    try:
+        with open(CREDENTIALS_FILE_PATH, 'r') as f:
+            creds = json.load(f)
+            logging.info(f"Loaded credentials from: {CREDENTIALS_FILE_PATH}")
+    except FileNotFoundError:
+        logging.info("No credentials file found, using environment variables")
+    except json.JSONDecodeError:
+        logging.warning("Invalid credentials file, using environment variables")
+    
+    # Map to standard names with env var fallback
+    return {
+        'pushover_app_token': creds.get('pushover_app_token') or os.getenv('PUSHOVER_APP_TOKEN'),
+        'pushover_user_key': creds.get('pushover_user_key') or os.getenv('PUSHOVER_USER_KEY'),
+        'reddit_client_id': creds.get('reddit_client_id') or os.getenv('REDDIT_CLIENT_ID'),
+        'reddit_client_secret': creds.get('reddit_client_secret') or os.getenv('REDDIT_CLIENT_SECRET'),
+        'reddit_user_agent': creds.get('reddit_user_agent') or os.getenv('REDDIT_USER_AGENT'),
+        'reddit_username': creds.get('reddit_username') or os.getenv('REDDIT_USERNAME'),
+        'reddit_password': creds.get('reddit_password') or os.getenv('REDDIT_PASSWORD'),
+    }
+
+
+# Load credentials globally
+CREDENTIALS = load_credentials()
+
+# Check if all necessary credentials are set
+required_creds = ['pushover_app_token', 'pushover_user_key', 'reddit_client_id', 'reddit_client_secret', 'reddit_user_agent', 'reddit_username', 'reddit_password']
+missing = [key for key in required_creds if not CREDENTIALS.get(key)]
+if missing:
+    logging.error(f'Missing required credentials: {", ".join(missing)}')
+    logging.error('Configure via web UI or set environment variables')
+    exit(1)
+
 
 class RedditMonitor:
     processed_submissions_file = PROCESSED_SUBMISSIONS_FILE_PATH
@@ -79,8 +114,8 @@ class RedditMonitor:
             conn = http.client.HTTPSConnection("api.pushover.net:443")
             conn.request("POST", "/1/messages.json",
                          urllib.parse.urlencode({
-                             "token": os.getenv('PUSHOVER_APP_TOKEN'),
-                             "user": os.getenv('PUSHOVER_USER_KEY'),
+                             "token": CREDENTIALS['pushover_app_token'],
+                             "user": CREDENTIALS['pushover_user_key'],
                              "message": message,
                          }), {"Content-type": "application/x-www-form-urlencoded"})
             response = conn.getresponse()
@@ -178,11 +213,11 @@ class RedditMonitor:
 
 def authenticate_reddit():
     logging.info("Authenticating Reddit...")
-    return praw.Reddit(client_id=os.getenv('REDDIT_CLIENT_ID'),
-                       client_secret=os.getenv('REDDIT_CLIENT_SECRET'),
-                       user_agent=os.getenv('REDDIT_USER_AGENT'),
-                       username=os.getenv('REDDIT_USERNAME'),
-                       password=os.getenv('REDDIT_PASSWORD'))
+    return praw.Reddit(client_id=CREDENTIALS['reddit_client_id'],
+                       client_secret=CREDENTIALS['reddit_client_secret'],
+                       user_agent=CREDENTIALS['reddit_user_agent'],
+                       username=CREDENTIALS['reddit_username'],
+                       password=CREDENTIALS['reddit_password'])
 
 def load_config():
     """Load configuration from search.json file."""
