@@ -30,6 +30,7 @@ export default function MonitorModal({
     const [newFlairContains, setNewFlairContains] = useState('');
     const [newAuthorIncludes, setNewAuthorIncludes] = useState('');
     const [newAuthorExcludes, setNewAuthorExcludes] = useState('');
+    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         if (monitor) {
@@ -135,8 +136,10 @@ export default function MonitorModal({
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
+        setError(null);
+
         if (!formData.subreddit) {
-            alert('Please enter a subreddit');
+            setError('Please enter a subreddit');
             return;
         }
 
@@ -147,7 +150,8 @@ export default function MonitorModal({
         const hasAuthorFilter = (formData.author_includes || []).length > 0;
 
         if (!hasKeywords && !hasDomainFilter && !hasFlairFilter && !hasAuthorFilter) {
-            alert('Please add at least one filter:\n• Keywords\n• Domain\n• Flair\n• Author');
+            setError('Please add at least one filter: Keywords, Domain, Flair, or Author');
+            setActiveTab('filters');
             return;
         }
 
@@ -550,6 +554,13 @@ export default function MonitorModal({
                             </div>
                         )}
                     </div>
+
+                    {/* Error Message */}
+                    {error && (
+                        <div className="mx-4 mb-2 p-3 bg-red-500/30 border border-red-500/50 rounded-lg text-white text-sm">
+                            ⚠️ {error}
+                        </div>
+                    )}
 
                     {/* Footer */}
                     <div className="p-4 flex gap-3" style={{ backgroundColor: 'rgba(0,0,0,0.2)' }}>
