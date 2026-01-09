@@ -11,7 +11,12 @@
             "enabled": true,
             "exclude_keywords": [],
             "cooldown_minutes": 5,
-            "max_post_age_hours": 12
+            "max_post_age_hours": 12,
+            "domain_contains": [],
+            "domain_excludes": [],
+            "flair_contains": [],
+            "author_includes": [],
+            "author_excludes": []
         },
         {
             "subreddit": "frugalmalefashion",
@@ -24,7 +29,12 @@
             "enabled": true,
             "exclude_keywords": [],
             "cooldown_minutes": 5,
-            "max_post_age_hours": 12
+            "max_post_age_hours": 12,
+            "domain_contains": [],
+            "domain_excludes": [],
+            "flair_contains": [],
+            "author_includes": [],
+            "author_excludes": []
         },
         {
             "subreddit": "gamedeals",
@@ -37,7 +47,12 @@
             "enabled": true,
             "exclude_keywords": [],
             "cooldown_minutes": 5,
-            "max_post_age_hours": 12
+            "max_post_age_hours": 12,
+            "domain_contains": [],
+            "domain_excludes": [],
+            "flair_contains": [],
+            "author_includes": [],
+            "author_excludes": []
         },
         {
             "subreddit": "gamedeals",
@@ -50,7 +65,12 @@
             "enabled": true,
             "exclude_keywords": [],
             "cooldown_minutes": 5,
-            "max_post_age_hours": 12
+            "max_post_age_hours": 12,
+            "domain_contains": [],
+            "domain_excludes": [],
+            "flair_contains": [],
+            "author_includes": [],
+            "author_excludes": []
         },
         {
             "id": "263d5fe7-5242-4d38-838d-db23dd26b7e8",
@@ -64,19 +84,31 @@
             "color": "#F97316",
             "enabled": true,
             "cooldown_minutes": 5,
-            "max_post_age_hours": 12
+            "max_post_age_hours": 12,
+            "domain_contains": [],
+            "domain_excludes": [],
+            "flair_contains": [],
+            "author_includes": [],
+            "author_excludes": []
         },
         {
             "id": "a68d1d25-3975-4dea-ba19-6d5239a2ef12",
             "name": "Red dead redemption",
             "subreddit": "gamedeals",
-            "keywords": [],
+            "keywords": [
+                "read dead redemption"
+            ],
             "exclude_keywords": [],
             "min_upvotes": null,
             "color": "#10B981",
             "enabled": true,
             "cooldown_minutes": 5,
-            "max_post_age_hours": 12
+            "max_post_age_hours": 12,
+            "domain_contains": [],
+            "domain_excludes": [],
+            "flair_contains": [],
+            "author_includes": [],
+            "author_excludes": []
         }
     ],
     "iteration_time_minutes": 10

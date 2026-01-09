@@ -139,6 +139,18 @@ export default function MonitorModal({
             alert('Please enter a subreddit');
             return;
         }
+
+        // Check that at least one positive filter is set
+        const hasKeywords = (formData.keywords || []).length > 0;
+        const hasDomainFilter = (formData.domain_contains || []).length > 0;
+        const hasFlairFilter = (formData.flair_contains || []).length > 0;
+        const hasAuthorFilter = (formData.author_includes || []).length > 0;
+
+        if (!hasKeywords && !hasDomainFilter && !hasFlairFilter && !hasAuthorFilter) {
+            alert('Please add at least one filter:\n• Keywords\n• Domain\n• Flair\n• Author');
+            return;
+        }
+
         onSave(formData);
     };
 
