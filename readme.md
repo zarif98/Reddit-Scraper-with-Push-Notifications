@@ -22,33 +22,22 @@ pip install -r requirements.txt
 3. Create a `.env` file in the project root and fill it with your credentials:
 
 
-4. Customize the `config.json` file with the subreddits you want to monitor and their respective parameters.
+4. Customize `search.json` with the subreddits you want to monitor (or use the Web UI):
 
 ```json
 {
-    "subreddits": [
+    "subreddits_to_search": [
         {
             "subreddit": "hardwareswap",
-            "keywords": ["m50"]
+            "keywords": ["3080"],
+            "cooldown_minutes": 5
         },
         {
-            "subreddit": "frugalmalefashion",
-            "keywords": ["fjallraven"],
-            "min_upvotes": null,
-            "max_notifications": null
-        },
-        {
-            "subreddit": "dogs",
-            "keywords": ["dogs", "puppies"],
-            "min_upvotes": 30,
-            "max_notifications": 3
-        },
-        {
-            "subreddit": "hardwareswap",
-            "keywords": ["3080"]
+            "subreddit": "gamedeals",
+            "keywords": ["free", "100%"],
+            "cooldown_minutes": 2
         }
-    ],
-    "iteration_time_minutes": 5
+    ]
 }
 ```
 

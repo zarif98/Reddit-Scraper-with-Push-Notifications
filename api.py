@@ -90,8 +90,7 @@ def load_config():
     except FileNotFoundError:
         # Create default config
         default_config = {
-            'subreddits_to_search': [],
-            'iteration_time_minutes': 5
+            'subreddits_to_search': []
         }
         save_config(default_config)
         return default_config
@@ -190,8 +189,7 @@ def get_monitors():
     try:
         config = load_config()
         return jsonify({
-            'monitors': config.get('subreddits_to_search', []),
-            'iteration_time_minutes': config.get('iteration_time_minutes', 5)
+            'monitors': config.get('subreddits_to_search', [])
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -332,37 +330,14 @@ def delete_monitor(monitor_id):
 
 @app.route('/api/settings', methods=['GET'])
 def get_settings():
-    """Get global settings."""
-    try:
-        config = load_config()
-        return jsonify({
-            'iteration_time_minutes': config.get('iteration_time_minutes', 5)
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    """Get global settings (deprecated - using per-monitor intervals now)."""
+    return jsonify({'message': 'Global settings deprecated. Use per-monitor refresh intervals.'})
 
 
 @app.route('/api/settings', methods=['PUT'])
 def update_settings():
-    """Update global settings."""
-    try:
-        data = request.get_json()
-        
-        if not data:
-            return jsonify({'error': 'No data provided'}), 400
-        
-        config = load_config()
-        
-        if 'iteration_time_minutes' in data:
-            config['iteration_time_minutes'] = int(data['iteration_time_minutes'])
-        
-        save_config(config)
-        
-        return jsonify({
-            'iteration_time_minutes': config.get('iteration_time_minutes', 5)
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    """Update global settings (deprecated)."""
+    return jsonify({'message': 'Global settings deprecated. Use per-monitor refresh intervals.'})
 
 
 if __name__ == '__main__':

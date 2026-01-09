@@ -1,9 +1,14 @@
 {
     "subreddits_to_search": [
-        {"subreddit": "photomarket", "keywords": ["r6"]},
-        {"subreddit": "frugalmalefashion", "keywords": ["porter"]},
-        {"subreddit": "gamedeals", "keywords": ["prime"]},
-        {"subreddit": "gamedeals", "keywords": ["free"]}
-    ],
-    "iteration_time_minutes": 5
+        {
+            "subreddit": "photomarket",
+            "keywords": ["r6"],
+            "cooldown_minutes": 10
+        },
+        {
+            "subreddit": "gamedeals",
+            "keywords": ["free"],
+            "cooldown_minutes": 5
+        }
+    ]
 }
