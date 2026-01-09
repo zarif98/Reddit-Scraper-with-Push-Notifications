@@ -109,6 +109,25 @@
             "flair_contains": [],
             "author_includes": [],
             "author_excludes": []
+        },
+        {
+            "id": "4a8a79c6-ec31-4a4c-af00-d15a1cbdfd3f",
+            "name": "r/Games",
+            "subreddit": "games",
+            "keywords": [
+                "test"
+            ],
+            "exclude_keywords": [],
+            "min_upvotes": null,
+            "color": "#EC4899",
+            "enabled": true,
+            "cooldown_minutes": 5,
+            "max_post_age_hours": 12,
+            "domain_contains": [],
+            "domain_excludes": [],
+            "flair_contains": [],
+            "author_includes": [],
+            "author_excludes": []
         }
     ],
     "iteration_time_minutes": 10

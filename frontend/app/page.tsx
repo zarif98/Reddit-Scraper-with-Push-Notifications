@@ -90,8 +90,6 @@ export default function Home() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this monitor?')) return;
-
     try {
       const response = await fetch(`${API_URL}/api/monitors/${id}`, {
         method: 'DELETE',
@@ -102,7 +100,6 @@ export default function Home() {
       fetchMonitors();
     } catch (err) {
       console.error('Delete error:', err);
-      alert('Failed to delete monitor');
     }
   };
 

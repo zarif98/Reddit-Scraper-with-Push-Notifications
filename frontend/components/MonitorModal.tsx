@@ -40,6 +40,7 @@ export default function MonitorModal({
     const [newAuthorIncludes, setNewAuthorIncludes] = useState('');
     const [newAuthorExcludes, setNewAuthorExcludes] = useState('');
     const [error, setError] = useState<string | null>(null);
+    const [confirmDelete, setConfirmDelete] = useState(false);
 
     // Subreddit autocomplete state
     const [subredditQuery, setSubredditQuery] = useState('');
@@ -677,22 +678,42 @@ export default function MonitorModal({
 
                     {/* Footer - Always Visible */}
                     <div className="modal-footer p-4 flex gap-3" style={{ backgroundColor }}>
-                        {!isCreating && monitor && (
+                        {!isCreating && monitor && !confirmDelete && (
                             <button
                                 type="button"
-                                onClick={() => onDelete(monitor.id)}
+                                onClick={() => setConfirmDelete(true)}
                                 className="btn-primary bg-red-500/30 hover:bg-red-500/50 flex-1"
                             >
                                 🗑️ Delete
                             </button>
                         )}
-                        <button
-                            type="submit"
-                            className="btn-primary flex-1"
-                            disabled={isSaving}
-                        >
-                            {isSaving ? '⏳ Validating...' : '✓ Save'}
-                        </button>
+                        {confirmDelete && (
+                            <>
+                                <button
+                                    type="button"
+                                    onClick={() => setConfirmDelete(false)}
+                                    className="btn-primary bg-white/20 hover:bg-white/30 flex-1"
+                                >
+                                    ✕ Cancel
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => onDelete(monitor!.id)}
+                                    className="btn-primary bg-red-500 hover:bg-red-600 flex-1"
+                                >
+                                    🗑️ Confirm Delete
+                                </button>
+                            </>
+                        )}
+                        {!confirmDelete && (
+                            <button
+                                type="submit"
+                                className="btn-primary flex-1"
+                                disabled={isSaving}
+                            >
+                                {isSaving ? '⏳ Validating...' : '✓ Save'}
+                            </button>
+                        )}
                     </div>
                 </form>
             </div>
