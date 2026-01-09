@@ -8,6 +8,7 @@ from flask_cors import CORS
 import json
 import os
 import uuid
+import requests
 from datetime import datetime
 
 app = Flask(__name__)
@@ -112,6 +113,41 @@ def health_check():
         'timestamp': datetime.now().isoformat(),
         'config_path': CONFIG_FILE_PATH
     })
+
+
+@app.route('/api/subreddits/search', methods=['GET'])
+def search_subreddits():
+    """Search for subreddits using Reddit's API."""
+    query = request.args.get('q', '').strip()
+    
+    if not query or len(query) < 2:
+        return jsonify({'subreddits': []})
+    
+    try:
+        # Use Reddit's search API
+        headers = {'User-Agent': 'RedditMonitorWebUI/1.0'}
+        response = requests.get(
+            f'https://www.reddit.com/subreddits/search.json?q={query}&limit=10',
+            headers=headers,
+            timeout=5
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            subreddits = []
+            for child in data.get('data', {}).get('children', []):
+                sub_data = child.get('data', {})
+                subreddits.append({
+                    'name': sub_data.get('display_name', ''),
+                    'title': sub_data.get('title', ''),
+                    'subscribers': sub_data.get('subscribers', 0),
+                    'public_description': sub_data.get('public_description', '')[:100]
+                })
+            return jsonify({'subreddits': subreddits})
+        else:
+            return jsonify({'subreddits': [], 'error': 'Reddit API error'})
+    except Exception as e:
+        return jsonify({'subreddits': [], 'error': str(e)})
 
 
 @app.route('/api/monitors', methods=['GET'])

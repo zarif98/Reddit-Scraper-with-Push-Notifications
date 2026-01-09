@@ -1,8 +1,17 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Monitor, DEFAULT_MONITOR, DEFAULT_COLORS } from '@/types/monitor';
 import ColorPicker from './ColorPicker';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+
+interface SubredditSuggestion {
+    name: string;
+    title: string;
+    subscribers: number;
+    public_description: string;
+}
 
 interface MonitorModalProps {
     monitor: Monitor | null;
@@ -32,16 +41,69 @@ export default function MonitorModal({
     const [newAuthorExcludes, setNewAuthorExcludes] = useState('');
     const [error, setError] = useState<string | null>(null);
 
+    // Subreddit autocomplete state
+    const [subredditQuery, setSubredditQuery] = useState('');
+    const [suggestions, setSuggestions] = useState<SubredditSuggestion[]>([]);
+    const [showSuggestions, setShowSuggestions] = useState(false);
+    const [isSearching, setIsSearching] = useState(false);
+    const suggestionRef = useRef<HTMLDivElement>(null);
+
     useEffect(() => {
         if (monitor) {
             setFormData(monitor);
+            setSubredditQuery(monitor.subreddit || '');
         } else {
             setFormData({
                 ...DEFAULT_MONITOR,
                 color: DEFAULT_COLORS[Math.floor(Math.random() * DEFAULT_COLORS.length)],
             });
+            setSubredditQuery('');
         }
     }, [monitor]);
+
+    // Debounced subreddit search
+    useEffect(() => {
+        if (!subredditQuery || subredditQuery.length < 2) {
+            setSuggestions([]);
+            return;
+        }
+
+        const timer = setTimeout(async () => {
+            setIsSearching(true);
+            try {
+                const response = await fetch(`${API_URL}/api/subreddits/search?q=${encodeURIComponent(subredditQuery)}`);
+                const data = await response.json();
+                setSuggestions(data.subreddits || []);
+                setShowSuggestions(true);
+            } catch (err) {
+                console.error('Failed to search subreddits:', err);
+                setSuggestions([]);
+            } finally {
+                setIsSearching(false);
+            }
+        }, 300);
+
+        return () => clearTimeout(timer);
+    }, [subredditQuery]);
+
+    // Close suggestions when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (suggestionRef.current && !suggestionRef.current.contains(e.target as Node)) {
+                setShowSuggestions(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    const selectSubreddit = (name: string) => {
+        setSubredditQuery(name);
+        handleInputChange('subreddit', name);
+        handleInputChange('name', `r/${name}`);
+        setShowSuggestions(false);
+        setSuggestions([]);
+    };
 
     const handleInputChange = (field: keyof Monitor, value: unknown) => {
         setFormData(prev => ({ ...prev, [field]: value }));
@@ -189,16 +251,44 @@ export default function MonitorModal({
                                         className="input-field bg-transparent border-none text-xl font-semibold p-0 mb-2"
                                         style={{ background: 'transparent' }}
                                     />
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-2 relative" ref={suggestionRef}>
                                         <span className="text-white/80">r/</span>
-                                        <input
-                                            type="text"
-                                            value={formData.subreddit || ''}
-                                            onChange={(e) => handleInputChange('subreddit', e.target.value.replace('r/', ''))}
-                                            placeholder="subreddit"
-                                            className="input-field bg-white/10 text-sm py-2 px-3 w-auto flex-1"
-                                            required
-                                        />
+                                        <div className="relative flex-1">
+                                            <input
+                                                type="text"
+                                                value={subredditQuery}
+                                                onChange={(e) => {
+                                                    const value = e.target.value.replace('r/', '');
+                                                    setSubredditQuery(value);
+                                                    handleInputChange('subreddit', value);
+                                                }}
+                                                onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+                                                placeholder="subreddit"
+                                                className="input-field bg-white/10 text-sm py-2 px-3 w-full"
+                                                required
+                                                autoComplete="off"
+                                            />
+                                            {isSearching && (
+                                                <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                                                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                                                </div>
+                                            )}
+                                            {showSuggestions && suggestions.length > 0 && (
+                                                <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 rounded-lg shadow-xl z-50 max-h-48 overflow-y-auto border border-white/10">
+                                                    {suggestions.map((sub, index) => (
+                                                        <div
+                                                            key={index}
+                                                            className="px-3 py-2 hover:bg-white/10 cursor-pointer border-b border-white/5 last:border-0"
+                                                            onClick={() => selectSubreddit(sub.name)}
+                                                        >
+                                                            <div className="font-medium text-white">r/{sub.name}</div>
+                                                            <div className="text-xs text-white/60 truncate">{sub.title}</div>
+                                                            <div className="text-xs text-white/40">{sub.subscribers?.toLocaleString()} members</div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                                 <div
