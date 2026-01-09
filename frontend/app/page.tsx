@@ -6,8 +6,7 @@ import MonitorModal from '@/components/MonitorModal';
 import SettingsModal from '@/components/SettingsModal';
 import SetupRequired from '@/components/SetupRequired';
 import { Monitor } from '@/types/monitor';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+import { getApiUrl } from '@/lib/api';
 
 export default function Home() {
   const [monitors, setMonitors] = useState<Monitor[]>([]);
@@ -21,7 +20,7 @@ export default function Home() {
 
   const checkCredentials = async () => {
     try {
-      const response = await fetch(`${API_URL}/api/credentials/status`);
+      const response = await fetch(`${getApiUrl()}/api/credentials/status`);
       const data = await response.json();
       setIsConfigured(data.configured);
     } catch (err) {
@@ -33,7 +32,7 @@ export default function Home() {
   const fetchMonitors = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_URL}/api/monitors`);
+      const response = await fetch(`${getApiUrl()}/api/monitors`);
       if (!response.ok) throw new Error('Failed to fetch monitors');
       const data = await response.json();
       setMonitors(data.monitors || []);
@@ -52,7 +51,7 @@ export default function Home() {
 
   const handleToggle = async (id: string, enabled: boolean) => {
     try {
-      const response = await fetch(`${API_URL}/api/monitors/${id}`, {
+      const response = await fetch(`${getApiUrl()}/api/monitors/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled }),
@@ -82,14 +81,14 @@ export default function Home() {
   const handleSave = async (monitor: Partial<Monitor>) => {
     try {
       if (isCreating) {
-        const response = await fetch(`${API_URL}/api/monitors`, {
+        const response = await fetch(`${getApiUrl()}/api/monitors`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(monitor),
         });
         if (!response.ok) throw new Error('Failed to create monitor');
       } else if (selectedMonitor) {
-        const response = await fetch(`${API_URL}/api/monitors/${selectedMonitor.id}`, {
+        const response = await fetch(`${getApiUrl()}/api/monitors/${selectedMonitor.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(monitor),
@@ -106,7 +105,7 @@ export default function Home() {
 
   const handleDelete = async (id: string) => {
     try {
-      const response = await fetch(`${API_URL}/api/monitors/${id}`, {
+      const response = await fetch(`${getApiUrl()}/api/monitors/${id}`, {
         method: 'DELETE',
       });
       if (!response.ok) throw new Error('Failed to delete monitor');

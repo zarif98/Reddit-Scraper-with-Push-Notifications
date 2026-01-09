@@ -3,8 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Monitor, DEFAULT_MONITOR, DEFAULT_COLORS } from '@/types/monitor';
 import ColorPicker from './ColorPicker';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+import { getApiUrl } from '@/lib/api';
 
 interface SubredditSuggestion {
     name: string;
@@ -72,7 +71,7 @@ export default function MonitorModal({
         const timer = setTimeout(async () => {
             setIsSearching(true);
             try {
-                const response = await fetch(`${API_URL}/api/subreddits/search?q=${encodeURIComponent(subredditQuery)}`);
+                const response = await fetch(`${getApiUrl()}/api/subreddits/search?q=${encodeURIComponent(subredditQuery)}`);
                 const data = await response.json();
                 setSuggestions(data.subreddits || []);
                 setShowSuggestions(true);
@@ -223,7 +222,7 @@ export default function MonitorModal({
         // Validate subreddit exists
         setIsSaving(true);
         try {
-            const response = await fetch(`${API_URL}/api/subreddits/validate/${encodeURIComponent(formData.subreddit)}`);
+            const response = await fetch(`${getApiUrl()}/api/subreddits/validate/${encodeURIComponent(formData.subreddit)}`);
             const data = await response.json();
 
             if (!data.valid) {

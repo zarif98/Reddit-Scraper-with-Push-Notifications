@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+import { getApiUrl } from '@/lib/api';
 
 interface SettingsModalProps {
     onClose: () => void;
@@ -42,7 +41,7 @@ export default function SettingsModal({ onClose, onSave }: SettingsModalProps) {
 
     const fetchCredentials = async () => {
         try {
-            const response = await fetch(`${API_URL}/api/credentials`);
+            const response = await fetch(`${getApiUrl()}/api/credentials`);
             const data = await response.json();
             setCredentials(data);
         } catch (err) {
@@ -64,7 +63,7 @@ export default function SettingsModal({ onClose, onSave }: SettingsModalProps) {
         setSaving(true);
 
         try {
-            const response = await fetch(`${API_URL}/api/credentials`, {
+            const response = await fetch(`${getApiUrl()}/api/credentials`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(credentials),
