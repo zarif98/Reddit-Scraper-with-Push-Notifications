@@ -100,7 +100,10 @@ export default function MonitorModal({
     const selectSubreddit = (name: string) => {
         setSubredditQuery(name);
         handleInputChange('subreddit', name);
-        handleInputChange('name', `r/${name}`);
+        // Only auto-fill name if it's empty or still the default
+        if (!formData.name || formData.name === '' || formData.name === 'New Monitor') {
+            handleInputChange('name', `r/${name}`);
+        }
         setShowSuggestions(false);
         setSuggestions([]);
     };
