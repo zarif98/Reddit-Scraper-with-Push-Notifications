@@ -2,7 +2,7 @@
 // This allows the frontend to work from any device on the network
 
 // Default API port - can be overridden via localStorage
-const DEFAULT_API_PORT = 5001;
+const DEFAULT_API_PORT = 5040;
 
 export function getApiUrl(): string {
     // In the browser, use the same hostname as the frontend
