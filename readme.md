@@ -1,83 +1,200 @@
-# Reddit Scraper with Push Notifications
+# Reddit Monitor with Push Notifications
 
-This Python script scrapes Reddit for specified keywords in multiple subreddits and sends push notifications for matching posts. I basically use it to track free games on the GameDeals subreddit but you can use it for anything else!
+A self-hosted Reddit monitoring bot with a modern web UI. Get instant Pushover notifications when posts matching your keywords appear in your favorite subreddits.
 
-## Prerequisites
+![Web UI Preview](docs/web-ui.png)
 
-Before running the script, ensure you have the following:
+## ✨ Features
 
-- Python installed
-- PRAW library (`pip install praw`)
-- `dotenv` library (`pip install python-dotenv`)
-- `colorama` library (`pip install colorama`)
+- **🌐 Web UI** - Beautiful dark-themed interface to manage monitors from any device
+- **📱 Mobile Friendly** - Works great on phones and tablets
+- **🔔 Push Notifications** - Instant Pushover alerts for matching posts
+- **⏱️ Per-Monitor Refresh** - Each monitor can have its own check interval (1 min to 1 hour)
+- **🎯 Advanced Filters** - Keywords, exclusions, domain filters, flair filters, author filters
+- **🐳 Docker Ready** - Easy deployment with Docker Compose
+- **🔄 Auto Updates** - Works with Watchtower for automatic container updates
+- **⚙️ Web-Based Setup** - Configure Reddit & Pushover credentials via the UI
 
-One can also just requirements.txt file within the repo as well!
-```bash
-pip install -r requirements.txt
+## 🚀 Quick Start (Docker)
+
+### 1. Create docker-compose.yml
+
+```yaml
+version: '3.8'
+
+services:
+  bot:
+    image: ghcr.io/zarif98/reddit-scraper-with-push-notifications:latest
+    container_name: reddit-bot
+    command: ["python", "bot.py"]
+    restart: unless-stopped
+    environment:
+      - DATA_DIR=/data
+    volumes:
+      - ./data:/data
+    depends_on:
+      - api
+
+  api:
+    image: ghcr.io/zarif98/reddit-scraper-with-push-notifications:latest
+    container_name: reddit-api
+    command: ["python", "api.py"]
+    restart: unless-stopped
+    ports:
+      - "5040:5001"
+    environment:
+      - DATA_DIR=/data
+    volumes:
+      - ./data:/data
+
+  frontend:
+    image: ghcr.io/zarif98/reddit-scraper-with-push-notifications:frontend
+    container_name: reddit-frontend
+    restart: unless-stopped
+    ports:
+      - "8080:3000"
+    depends_on:
+      - api
 ```
-## Configuration
 
-1. Create a Reddit account and obtain the necessary credentials (client ID, client secret, user agent, username, and password).
-2. Create a Pushover account and obtain the application token and user key.
-3. Create a `.env` file in the project root and fill it with your credentials:
+### 2. Start the Stack
 
+```bash
+docker-compose up -d
+```
 
-4. Customize `search.json` with the subreddits you want to monitor (or use the Web UI):
+### 3. Configure Credentials
+
+1. Open `http://localhost:8080` (or `http://YOUR_IP:8080`)
+2. Click **Configure Settings**
+3. Enter your Reddit API credentials and Pushover keys
+4. Save - the bot will automatically start monitoring!
+
+## 📦 Data Persistence
+
+All data is stored in the `/data` volume:
+
+```
+./data/
+├── search.json          # Your monitors configuration
+├── credentials.json     # Reddit & Pushover credentials
+└── processed_submissions.pkl  # Tracks sent notifications
+```
+
+## ⚙️ Configuration
+
+### Getting Reddit API Credentials
+
+1. Go to https://www.reddit.com/prefs/apps
+2. Click "Create App" or "Create Another App"
+3. Select "script" as the app type
+4. Note your `client_id` (under the app name) and `client_secret`
+
+### Getting Pushover Credentials
+
+1. Sign up at https://pushover.net
+2. Note your **User Key** from the dashboard
+3. Create an application to get an **API Token**
+
+### Monitor Options
+
+Each monitor supports these options:
+
+| Field | Description | Default |
+|-------|-------------|---------|
+| `name` | Display name for the monitor | Auto-generated |
+| `subreddit` | Subreddit to monitor (without r/) | Required |
+| `keywords` | Words to match in post titles | Required |
+| `exclude_keywords` | Words to exclude | `[]` |
+| `min_upvotes` | Minimum upvotes required | `null` |
+| `cooldown_minutes` | Refresh interval (1-60 min) | `10` |
+| `max_post_age_hours` | Ignore posts older than this | `12` |
+| `domain_contains` | Only match these domains | `[]` |
+| `domain_excludes` | Exclude these domains | `[]` |
+| `flair_contains` | Only match these flairs | `[]` |
+| `author_includes` | Only from these authors | `[]` |
+| `author_excludes` | Ignore these authors | `[]` |
+| `enabled` | Active/inactive toggle | `true` |
+| `color` | UI card color | Auto-assigned |
+
+### Example search.json
 
 ```json
 {
     "subreddits_to_search": [
         {
-            "subreddit": "hardwareswap",
-            "keywords": ["3080"],
-            "cooldown_minutes": 5
-        },
-        {
+            "id": "example-1",
+            "name": "Free Games",
             "subreddit": "gamedeals",
             "keywords": ["free", "100%"],
-            "cooldown_minutes": 2
+            "exclude_keywords": ["demo"],
+            "cooldown_minutes": 2,
+            "domain_contains": ["epicgames.com", "steam"],
+            "enabled": true
         }
     ]
 }
 ```
 
-## Env file
-This is what your .env file should look like
-![Env file example](SCR-20240714-kyky.png "Env file example")
+## 🖥️ Local Development
 
-
-## Web Interface (New!)
-
-Manage your monitors with a beautiful web UI instead of editing JSON files.
-
-1. **Start the Backend API**:
-   ```bash
-   python api.py
-   ```
-   *Runs on http://localhost:5001*
-
-2. **Start the Frontend**:
-   ```bash
-   cd frontend
-   npm run dev
-   ```
-   *Runs on http://localhost:3000*
-
-3. **Access from Mobile**:
-   Open `http://<YOUR_NAS_IP>:3000` on your phone.
-
-## Usage
-Run the script using the following command:
+### Backend (API + Bot)
 
 ```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Run API server
+python api.py
+
+# Run bot (in another terminal)
 python bot.py
 ```
-The script will start monitoring the specified subreddits and send push notifications for matching posts.
 
-## Running on Synology
-If you want to run this on Synology, this the volume mapping
-![Portainer settings for Synology](ContainerSettings.png "Portainer example")
+### Frontend
 
+```bash
+cd frontend
+npm install
+npm run dev
+```
 
-## License
-This project is licensed under the MIT License - see the LICENSE file for details.
+Access at http://localhost:3000
+
+## 🛠️ Synology NAS Deployment
+
+1. **Create data directory**: `/volume1/docker/reddit-monitor/data`
+
+2. **Deploy via Portainer** as a Stack with the docker-compose above
+
+3. **Port Configuration**:
+   - Frontend: `8080:3000`
+   - API: `5040:5001` (avoid 5001, used by Synology DSM)
+
+4. **Add Watchtower** for auto-updates:
+   ```yaml
+   watchtower:
+     image: containrrr/watchtower
+     volumes:
+       - /var/run/docker.sock:/var/run/docker.sock
+     command: --interval 3600
+   ```
+
+## 🔧 Troubleshooting
+
+### "Load failed" on mobile
+Run in browser console:
+```javascript
+localStorage.setItem('api_port', '5040');
+location.reload();
+```
+
+### Bot shows "Waiting for credentials"
+Configure credentials at `http://YOUR_IP:8080` → Settings
+
+### CORS errors
+Ensure API container is running and port mapping is correct
+
+## 📄 License
+
+MIT License - see LICENSE file for details.
