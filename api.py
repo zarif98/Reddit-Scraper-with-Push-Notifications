@@ -428,5 +428,6 @@ if __name__ == '__main__':
     print(f"🔐 Credentials file: {CREDENTIALS_FILE_PATH}")
     print(f"🌐 API available at: http://0.0.0.0:5001")
     print(f"📱 Access from other devices using your local IP")
-    app.run(host='0.0.0.0', port=5001, debug=True)
-
+    # Use debug=False in production for better performance
+    debug_mode = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
+    app.run(host='0.0.0.0', port=5001, debug=debug_mode)
