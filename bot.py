@@ -76,17 +76,28 @@ def load_credentials():
         'reddit_password': creds.get('reddit_password') or os.getenv('REDDIT_PASSWORD'),
     }
 
+# Load credentials globally (with retry loop for first-time setup)
+CREDENTIALS = None
 
-# Load credentials globally
-CREDENTIALS = load_credentials()
+def wait_for_credentials():
+    """Wait for credentials to be configured via web UI."""
+    global CREDENTIALS
+    required_creds = ['pushover_app_token', 'pushover_user_key', 'reddit_client_id', 'reddit_client_secret', 'reddit_user_agent', 'reddit_username', 'reddit_password']
+    
+    while True:
+        CREDENTIALS = load_credentials()
+        missing = [key for key in required_creds if not CREDENTIALS.get(key)]
+        
+        if not missing:
+            logging.info("✅ All credentials configured! Starting bot...")
+            return
+        
+        logging.warning(f'⏳ Waiting for credentials: {", ".join(missing)}')
+        logging.info('Configure via web UI at http://YOUR_NAS_IP:8080')
+        time.sleep(30)  # Check every 30 seconds
 
-# Check if all necessary credentials are set
-required_creds = ['pushover_app_token', 'pushover_user_key', 'reddit_client_id', 'reddit_client_secret', 'reddit_user_agent', 'reddit_username', 'reddit_password']
-missing = [key for key in required_creds if not CREDENTIALS.get(key)]
-if missing:
-    logging.error(f'Missing required credentials: {", ".join(missing)}')
-    logging.error('Configure via web UI or set environment variables')
-    exit(1)
+
+wait_for_credentials()
 
 
 class RedditMonitor:
