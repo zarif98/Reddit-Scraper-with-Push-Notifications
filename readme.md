@@ -186,13 +186,6 @@ Access at http://localhost:3000
 
 ## 🔧 Troubleshooting
 
-### "Load failed" on mobile
-Run in browser console:
-```javascript
-localStorage.setItem('api_port', '5040');
-location.reload();
-```
-
 ### Bot shows "Waiting for credentials"
 Configure credentials at `http://YOUR_IP:8080` → Settings
 
