@@ -4,9 +4,9 @@ A self-hosted Reddit monitoring bot with a modern web UI. Get instant notificati
 
 ## 📸 Screenshots
 
-| Monitor List | Mobile View | Edit Monitor |
-|:---:|:---:|:---:|
-| ![Monitor List](SCR-20260109-jcdr.png) | ![Mobile View](SCR-20260110-inmx.png) | ![Edit Modal](SCR-20260110-inpp.png) |
+| Monitor List | Mobile View | Edit Monitor | Notifications |
+|:---:|:---:|:---:|:---:|
+| ![Monitor List](SCR-20260109-jcdr.png) | ![Mobile View](SCR-20260110-inmx.png) | ![Edit Modal](SCR-20260110-inpp.png) | ![Notifications](image.png) |
 
 ## ✨ Features
 
