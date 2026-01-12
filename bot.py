@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from colorama import init, Fore, Style
 import json
 import logging
+import apprise
 
 
 # --- Define paths for mounted data ---
@@ -65,10 +66,21 @@ def load_credentials():
     except json.JSONDecodeError:
         logging.warning("Invalid credentials file, using environment variables")
     
+    # Build notification URLs list
+    notification_urls = creds.get('notification_urls', [])
+    
+    # Auto-migrate old Pushover credentials to Apprise URL format
+    if not notification_urls:
+        pushover_token = creds.get('pushover_app_token') or os.getenv('PUSHOVER_APP_TOKEN')
+        pushover_user = creds.get('pushover_user_key') or os.getenv('PUSHOVER_USER_KEY')
+        if pushover_token and pushover_user:
+            # Convert to Apprise Pushover URL format: pover://user_key@app_token
+            notification_urls = [f"pover://{pushover_user}@{pushover_token}"]
+            logging.info("Auto-migrated Pushover credentials to Apprise format")
+    
     # Map to standard names with env var fallback
     return {
-        'pushover_app_token': creds.get('pushover_app_token') or os.getenv('PUSHOVER_APP_TOKEN'),
-        'pushover_user_key': creds.get('pushover_user_key') or os.getenv('PUSHOVER_USER_KEY'),
+        'notification_urls': notification_urls,
         'reddit_client_id': creds.get('reddit_client_id') or os.getenv('REDDIT_CLIENT_ID'),
         'reddit_client_secret': creds.get('reddit_client_secret') or os.getenv('REDDIT_CLIENT_SECRET'),
         'reddit_user_agent': creds.get('reddit_user_agent') or os.getenv('REDDIT_USER_AGENT'),
@@ -76,23 +88,31 @@ def load_credentials():
         'reddit_password': creds.get('reddit_password') or os.getenv('REDDIT_PASSWORD'),
     }
 
+
 # Load credentials globally (with retry loop for first-time setup)
 CREDENTIALS = None
 
 def wait_for_credentials():
-    """Wait for credentials to be configured via web UI."""
+    """Wait for Reddit credentials to be configured via web UI."""
     global CREDENTIALS
-    required_creds = ['pushover_app_token', 'pushover_user_key', 'reddit_client_id', 'reddit_client_secret', 'reddit_user_agent', 'reddit_username', 'reddit_password']
+    # Only Reddit credentials are required - notifications are optional
+    required_creds = ['reddit_client_id', 'reddit_client_secret', 'reddit_user_agent', 'reddit_username', 'reddit_password']
     
     while True:
         CREDENTIALS = load_credentials()
         missing = [key for key in required_creds if not CREDENTIALS.get(key)]
         
         if not missing:
-            logging.info("✅ All credentials configured! Starting bot...")
+            # Warn if no notification URLs configured
+            if not CREDENTIALS.get('notification_urls'):
+                logging.warning("⚠️ No notification services configured - notifications disabled")
+                logging.info("Configure notifications via web UI at http://YOUR_NAS_IP:8080 → Settings")
+            else:
+                logging.info(f"🔔 Configured {len(CREDENTIALS['notification_urls'])} notification service(s)")
+            logging.info("✅ Reddit credentials configured! Starting bot...")
             return
         
-        logging.warning(f'⏳ Waiting for credentials: {", ".join(missing)}')
+        logging.warning(f'⏳ Waiting for Reddit credentials: {", ".join(missing)}')
         logging.info('Configure via web UI at http://YOUR_NAS_IP:8080')
         time.sleep(30)  # Check every 30 seconds
 
@@ -119,21 +139,34 @@ class RedditMonitor:
         self.author_excludes = author_excludes or []
         self.load_processed_submissions()
 
-    def send_push_notification(self, message):
-        logging.info("Sending Push Notification...")
+    def send_push_notification(self, message, title=None):
+        """Send notification via Apprise to all configured services."""
+        notification_urls = CREDENTIALS.get('notification_urls', [])
+        
+        if not notification_urls:
+            logging.debug("No notification services configured, skipping notification")
+            return
+        
+        logging.info(f"Sending notification to {len(notification_urls)} service(s)...")
+        
         try:
-            conn = http.client.HTTPSConnection("api.pushover.net:443")
-            conn.request("POST", "/1/messages.json",
-                         urllib.parse.urlencode({
-                             "token": CREDENTIALS['pushover_app_token'],
-                             "user": CREDENTIALS['pushover_user_key'],
-                             "message": message,
-                         }), {"Content-type": "application/x-www-form-urlencoded"})
-            response = conn.getresponse()
-            logging.info("Pushover API response: %s", response.read().decode())
-            conn.close()
+            # Create Apprise instance and add all configured URLs
+            apobj = apprise.Apprise()
+            for url in notification_urls:
+                apobj.add(url)
+            
+            # Send the notification
+            result = apobj.notify(
+                body=message,
+                title=title or f"Reddit Alert: r/{self.subreddit}",
+            )
+            
+            if result:
+                logging.info("✅ Notification sent successfully")
+            else:
+                logging.warning("⚠️ Some notifications may have failed")
         except Exception as e:
-            logging.error("Error sending Push Notification: %s", e)
+            logging.error(f"Error sending notification: {e}")
 
     def load_processed_submissions(self):
         try:

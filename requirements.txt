@@ -4,3 +4,4 @@ colorama==0.4.4
 flask==3.0.0
 flask-cors==4.0.0
 requests==2.31.0
+apprise==1.9.0

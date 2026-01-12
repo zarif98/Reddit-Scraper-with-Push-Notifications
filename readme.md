@@ -1,6 +1,6 @@
 # Reddit Monitor with Push Notifications
 
-A self-hosted Reddit monitoring bot with a modern web UI. Get instant Pushover notifications when posts matching your keywords appear in your favorite subreddits.
+A self-hosted Reddit monitoring bot with a modern web UI. Get instant notifications via **Discord, Slack, Telegram, Pushover, and 80+ other services** when posts matching your keywords appear in your favorite subreddits.
 
 ## 📸 Screenshots
 
@@ -12,12 +12,12 @@ A self-hosted Reddit monitoring bot with a modern web UI. Get instant Pushover n
 
 - **🌐 Web UI** - Beautiful dark-themed interface to manage monitors from any device
 - **📱 Mobile Friendly** - Works great on phones and tablets
-- **🔔 Push Notifications** - Instant Pushover alerts for matching posts
+- **🔔 80+ Notification Services** - Discord, Slack, Telegram, Pushover, ntfy, Email, and more via [Apprise](https://github.com/caronc/apprise)
 - **⏱️ Per-Monitor Refresh** - Each monitor can have its own check interval (1 min to 1 hour)
 - **🎯 Advanced Filters** - Keywords, exclusions, domain filters, flair filters, author filters
 - **🐳 Docker Ready** - Easy deployment with Docker Compose
 - **🔄 Auto Updates** - Works with Watchtower for automatic container updates
-- **⚙️ Web-Based Setup** - Configure Reddit & Pushover credentials via the UI
+- **⚙️ Web-Based Setup** - Configure Reddit & notification services via the UI
 
 ## 🚀 Quick Start (Docker)
 

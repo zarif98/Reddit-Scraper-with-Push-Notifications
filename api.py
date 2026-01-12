@@ -10,6 +10,7 @@ import os
 import uuid
 import requests
 from datetime import datetime
+import apprise
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
@@ -350,9 +351,9 @@ def save_credentials(credentials):
 
 
 def is_configured():
-    """Check if essential credentials are configured."""
+    """Check if essential credentials are configured (Reddit only, notifications optional)."""
     creds = load_credentials()
-    required = ['reddit_client_id', 'reddit_client_secret', 'pushover_app_token', 'pushover_user_key']
+    required = ['reddit_client_id', 'reddit_client_secret', 'reddit_username', 'reddit_password']
     return all(creds.get(key) for key in required)
 
 
@@ -360,10 +361,12 @@ def is_configured():
 def get_credentials_status():
     """Check if credentials are configured (without exposing them)."""
     creds = load_credentials()
+    notification_urls = creds.get('notification_urls', [])
     return jsonify({
         'configured': is_configured(),
         'has_reddit': bool(creds.get('reddit_client_id') and creds.get('reddit_client_secret')),
-        'has_pushover': bool(creds.get('pushover_app_token') and creds.get('pushover_user_key')),
+        'has_notifications': len(notification_urls) > 0,
+        'notification_count': len(notification_urls),
         'has_reddit_username': bool(creds.get('reddit_username')),
     })
 
@@ -372,15 +375,26 @@ def get_credentials_status():
 def get_credentials():
     """Get credentials (masked for security)."""
     creds = load_credentials()
-    # Return masked versions
+    notification_urls = creds.get('notification_urls', [])
+    
+    # Mask notification URLs (show service type but hide tokens)
+    masked_urls = []
+    for url in notification_urls:
+        # Show the protocol/service type, mask the rest
+        if '://' in url:
+            protocol = url.split('://')[0]
+            masked_urls.append(f"{protocol}://••••••••")
+        else:
+            masked_urls.append('••••••••')
+    
     return jsonify({
         'reddit_client_id': mask_value(creds.get('reddit_client_id', '')),
         'reddit_client_secret': mask_value(creds.get('reddit_client_secret', '')),
         'reddit_username': creds.get('reddit_username', ''),
         'reddit_password': mask_value(creds.get('reddit_password', '')),
         'reddit_user_agent': creds.get('reddit_user_agent', ''),
-        'pushover_app_token': mask_value(creds.get('pushover_app_token', '')),
-        'pushover_user_key': mask_value(creds.get('pushover_user_key', '')),
+        'notification_urls': notification_urls,  # Return full URLs for editing
+        'notification_urls_masked': masked_urls,  # Masked for display
     })
 
 
@@ -403,7 +417,7 @@ def update_credentials():
         
         # Only update fields that are provided and not masked
         fields = ['reddit_client_id', 'reddit_client_secret', 'reddit_username', 
-                  'reddit_password', 'reddit_user_agent', 'pushover_app_token', 'pushover_user_key']
+                  'reddit_password', 'reddit_user_agent']
         
         for field in fields:
             if field in data:
@@ -412,14 +426,55 @@ def update_credentials():
                 if value and '••••' not in value:
                     creds[field] = value
         
+        # Handle notification_urls array
+        if 'notification_urls' in data:
+            # Filter out empty strings
+            urls = [url.strip() for url in data['notification_urls'] if url and url.strip()]
+            creds['notification_urls'] = urls
+        
         save_credentials(creds)
         
         return jsonify({
             'success': True,
-            'configured': is_configured()
+            'configured': is_configured(),
+            'notification_count': len(creds.get('notification_urls', []))
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/notifications/test', methods=['POST'])
+def test_notification():
+    """Send a test notification to all configured services."""
+    try:
+        creds = load_credentials()
+        notification_urls = creds.get('notification_urls', [])
+        
+        if not notification_urls:
+            return jsonify({
+                'success': False,
+                'error': 'No notification services configured'
+            }), 400
+        
+        # Create Apprise instance and add all URLs
+        apobj = apprise.Apprise()
+        for url in notification_urls:
+            apobj.add(url)
+        
+        # Send test notification
+        result = apobj.notify(
+            body="This is a test notification from Reddit Monitor. If you see this, notifications are working! 🎉",
+            title="🧪 Test Notification"
+        )
+        
+        return jsonify({
+            'success': result,
+            'services_count': len(notification_urls),
+            'message': 'Test notification sent!' if result else 'Some notifications may have failed'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 
 
 if __name__ == '__main__':
