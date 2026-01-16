@@ -94,11 +94,21 @@ All data is stored in the `/data` volume:
 3. Select "script" as the app type
 4. Note your `client_id` (under the app name) and `client_secret`
 
-### Getting Pushover Credentials
+### Setting Up Notifications
 
-1. Sign up at https://pushover.net
-2. Note your **User Key** from the dashboard
-3. Create an application to get an **API Token**
+This app uses [Apprise](https://github.com/caronc/apprise) to support 80+ notification services. Configure notifications in the Settings modal using Apprise URLs.
+
+**Popular services:**
+| Service | URL Format |
+|---------|------------|
+| Discord | `discord://webhook_id/webhook_token` |
+| Slack | `slack://token_a/token_b/token_c/#channel` |
+| Telegram | `tgram://bot_token/chat_id` |
+| Pushover | `pover://user_key@api_token` |
+| ntfy | `ntfy://topic` |
+| Email | `mailto://user:pass@gmail.com` |
+
+See the [Apprise Wiki](https://github.com/caronc/apprise/wiki) for all supported services and URL formats.
 
 ### Monitor Options
 
@@ -183,6 +193,39 @@ Access at http://localhost:3000
        - /var/run/docker.sock:/var/run/docker.sock
      command: --interval 3600
    ```
+
+## 🔒 Private Network Configuration (Advanced)
+
+By default, the frontend auto-detects the API URL based on your browser's hostname. For Docker private networks where containers communicate by name, you can override this using environment variables.
+
+### Example: Fully Private docker-compose.yml
+
+```yaml
+services:
+  bot:
+    image: ghcr.io/zarif98/reddit-scraper-with-push-notifications:latest
+    # ... same as before
+
+  api:
+    image: ghcr.io/zarif98/reddit-scraper-with-push-notifications:latest
+    command: ["python", "api.py"]
+    # No ports exposed to host - only accessible within Docker network
+    expose:
+      - "5001"
+    volumes:
+      - ./data:/data
+
+  frontend:
+    image: ghcr.io/zarif98/reddit-scraper-with-push-notifications:frontend
+    ports:
+      - "8080:3000"  # Only frontend exposed to host
+    environment:
+      - NEXT_PUBLIC_API_URL=http://api:5001
+    depends_on:
+      - api
+```
+
+This allows the frontend container to reach the API via the internal Docker network (`http://api:5001`) without exposing the API port on the host.
 
 ## 🔧 Troubleshooting
 

@@ -25,6 +25,9 @@ FROM node:20-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
+# API URL can be overridden at runtime for private Docker networks
+# If not set, frontend uses dynamic hostname detection
+ENV NEXT_PUBLIC_API_URL=""
 
 # Copy built assets from builder
 COPY --from=builder /app/.next/standalone ./

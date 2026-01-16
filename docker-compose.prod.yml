@@ -44,5 +44,8 @@ services:
     restart: unless-stopped
     ports:
       - "${WEB_PORT:-3000}:3000"
+    environment:
+      # Uncomment for private Docker network (containers communicate by name)
+      # - NEXT_PUBLIC_API_URL=http://api:5001
     depends_on:
       - api

@@ -5,7 +5,13 @@
 const DEFAULT_API_PORT = 5040;
 
 export function getApiUrl(): string {
-    // In the browser, use the same hostname as the frontend
+    // Priority 1: Environment variable (for Docker private networks)
+    // When NEXT_PUBLIC_API_URL is set, always use it
+    if (process.env.NEXT_PUBLIC_API_URL) {
+        return process.env.NEXT_PUBLIC_API_URL;
+    }
+
+    // Priority 2: In the browser, use the same hostname as the frontend
     if (typeof window !== 'undefined') {
         const hostname = window.location.hostname;
 
@@ -17,7 +23,7 @@ export function getApiUrl(): string {
     }
 
     // Server-side fallback (during SSR)
-    return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
+    return 'http://localhost:5001';
 }
 
 // Helper to set custom API port (call from browser console if needed)
