@@ -285,13 +285,33 @@ class RedditMonitor:
             logging.error(error_message)
             self.send_error_notification(error_message)
 
+
+def sanitize_credential(value, name):
+    """Remove non-ASCII characters from credentials that cause latin-1 encoding errors."""
+    if not value:
+        return value
+    # Check for and warn about non-ASCII characters
+    original = value
+    sanitized = value.encode('ascii', 'ignore').decode('ascii')
+    if original != sanitized:
+        logging.warning(f"⚠️ Removed non-ASCII characters from {name}: found Unicode at positions {[i for i, c in enumerate(original) if ord(c) > 127]}")
+    return sanitized
+
+
 def authenticate_reddit():
     logging.info("Authenticating Reddit...")
-    return praw.Reddit(client_id=CREDENTIALS['reddit_client_id'],
-                       client_secret=CREDENTIALS['reddit_client_secret'],
-                       user_agent=CREDENTIALS['reddit_user_agent'],
-                       username=CREDENTIALS['reddit_username'],
-                       password=CREDENTIALS['reddit_password'])
+    # Sanitize credentials to remove any accidental Unicode characters
+    client_id = sanitize_credential(CREDENTIALS['reddit_client_id'], 'client_id')
+    client_secret = sanitize_credential(CREDENTIALS['reddit_client_secret'], 'client_secret')
+    user_agent = sanitize_credential(CREDENTIALS['reddit_user_agent'], 'user_agent')
+    username = sanitize_credential(CREDENTIALS['reddit_username'], 'username')
+    password = sanitize_credential(CREDENTIALS['reddit_password'], 'password')
+    
+    return praw.Reddit(client_id=client_id,
+                       client_secret=client_secret,
+                       user_agent=user_agent,
+                       username=username,
+                       password=password)
 
 def load_config():
     """Load configuration from search.json file."""
