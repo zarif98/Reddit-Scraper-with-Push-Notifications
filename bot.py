@@ -1,5 +1,7 @@
 import praw
 import time
+import sys
+import io
 from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 import os
@@ -9,6 +11,12 @@ from colorama import init, Fore, Style
 import json
 import logging
 import apprise
+
+# Force UTF-8 encoding for stdout/stderr to handle Unicode characters
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+if sys.stderr.encoding != 'utf-8':
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 
 # --- Define paths for mounted data ---
