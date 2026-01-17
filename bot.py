@@ -351,10 +351,9 @@ def main():
             logging.debug("No monitors due to run this cycle")
 
         # Base cycle interval - check every 2 minutes (monitors have their own schedules)
-        logging.info(f\"Cycle {loopTime} complete. Sleeping for 2 minutes before next check...")
+        logging.info(f"Cycle {loopTime} complete. Sleeping for 2 minutes before next check...")
         loopTime += 1
         time.sleep(120)  # Check every 2 minutes for lower CPU usage
 
 if __name__ == "__main__":
     main()
-
