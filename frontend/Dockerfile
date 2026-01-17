@@ -12,11 +12,9 @@ RUN npm ci
 # Copy source code
 COPY . .
 
-# Build argument for API URL (will be baked into the build)
-ARG NEXT_PUBLIC_API_URL=http://localhost:5001
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
-
 # Build the application
+# NOTE: NEXT_PUBLIC_API_URL is intentionally NOT set here
+# The frontend uses dynamic hostname detection at runtime
 RUN npm run build
 
 # Production stage
