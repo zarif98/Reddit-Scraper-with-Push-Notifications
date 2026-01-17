@@ -21,7 +21,7 @@ export default function SetupRequired({ onOpenSettings, onDismiss }: SetupRequir
                 <div className="text-6xl mb-4">🔧</div>
                 <h1 className="text-2xl font-bold text-white mb-2">Setup Required</h1>
                 <p className="text-white/70 mb-6">
-                    Before you can use Reddit Monitor, you need to configure your Reddit API and Pushover credentials.
+                    Before you can use Reddit Monitor, you need to configure your Reddit API credentials and notification services.
                 </p>
 
                 <div className="bg-white/5 rounded-lg p-4 mb-6 text-left">
@@ -29,7 +29,7 @@ export default function SetupRequired({ onOpenSettings, onDismiss }: SetupRequir
                     <ul className="text-sm text-white/60 space-y-1">
                         <li>• Reddit API credentials (Client ID & Secret)</li>
                         <li>• Reddit account (username & password)</li>
-                        <li>• Pushover App Token & User Key</li>
+                        <li>• Notification service URL (Discord, Slack, Telegram, etc.)</li>
                     </ul>
                 </div>
 

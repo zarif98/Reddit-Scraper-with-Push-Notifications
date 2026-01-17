@@ -637,7 +637,7 @@ export default function MonitorModal({
                                 <div className="text-center py-8 text-white/60">
                                     <div className="text-4xl mb-4">🔔</div>
                                     <p>Alerts will appear here when posts match your filters.</p>
-                                    <p className="text-sm mt-2">Check your Pushover notifications for real-time alerts!</p>
+                                    <p className="text-sm mt-2">Configure notifications in Settings for real-time alerts!</p>
                                 </div>
                             )}
 

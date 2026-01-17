@@ -71,7 +71,7 @@ docker-compose up -d
 
 1. Open `http://localhost:8080` (or `http://YOUR_IP:8080`)
 2. Click **Configure Settings**
-3. Enter your Reddit API credentials and Pushover keys
+3. Enter your Reddit API credentials and notification service URLs
 4. Save - the bot will automatically start monitoring!
 
 ## 📦 Data Persistence
@@ -81,7 +81,7 @@ All data is stored in the `/data` volume:
 ```
 ./data/
 ├── search.json          # Your monitors configuration
-├── credentials.json     # Reddit & Pushover credentials
+├── credentials.json     # Reddit & notification credentials
 └── processed_submissions.pkl  # Tracks sent notifications
 ```
 
