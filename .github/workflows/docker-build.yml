@@ -42,7 +42,5 @@ jobs:
       with:
         context: ./frontend
         push: true
-        build-args: |
-          NEXT_PUBLIC_API_URL=http://localhost:5001
         tags: |
           ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:frontend
