@@ -405,6 +405,59 @@ def mask_value(value):
     return value[:4] + '••••••••'
 
 
+def validate_reddit_credentials(client_id, client_secret, username, password, user_agent):
+    """Validate Reddit API credentials by attempting authentication.
+    
+    Returns (success: bool, error_message: str or None)
+    """
+    # First, check for non-ASCII characters
+    for name, value in [('client_id', client_id), ('client_secret', client_secret), 
+                        ('username', username), ('password', password), ('user_agent', user_agent)]:
+        if value:
+            non_ascii = [(i, c, hex(ord(c))) for i, c in enumerate(value) if ord(c) > 127]
+            if non_ascii:
+                return False, f"Non-ASCII character found in {name} at position {non_ascii[0][0]}: '{non_ascii[0][1]}' ({non_ascii[0][2]}). Please re-type the credential."
+    
+    # Try to authenticate with Reddit
+    try:
+        auth = requests.auth.HTTPBasicAuth(client_id, client_secret)
+        headers = {'User-Agent': user_agent}
+        data = {
+            'grant_type': 'password',
+            'username': username,
+            'password': password
+        }
+        response = requests.post(
+            'https://www.reddit.com/api/v1/access_token',
+            auth=auth,
+            headers=headers,
+            data=data,
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            if 'access_token' in result:
+                return True, None
+            elif 'error' in result:
+                return False, f"Reddit API error: {result.get('error')}"
+            else:
+                return False, "Unexpected response from Reddit API"
+        elif response.status_code == 401:
+            return False, "Invalid client_id or client_secret"
+        elif response.status_code == 400:
+            result = response.json()
+            if result.get('error') == 'invalid_grant':
+                return False, "Invalid username or password"
+            return False, f"Bad request: {result.get('error', 'unknown')}"
+        else:
+            return False, f"Reddit API returned status {response.status_code}"
+    except requests.exceptions.Timeout:
+        return False, "Connection to Reddit timed out"
+    except requests.exceptions.RequestException as e:
+        return False, f"Connection error: {str(e)}"
+
+
 @app.route('/api/credentials', methods=['PUT'])
 def update_credentials():
     """Update credentials."""
@@ -432,6 +485,23 @@ def update_credentials():
             urls = [url.strip() for url in data['notification_urls'] if url and url.strip()]
             creds['notification_urls'] = urls
         
+        # Validate Reddit credentials if requested or if they changed
+        validate = data.get('validate', False)
+        if validate:
+            valid, error = validate_reddit_credentials(
+                creds.get('reddit_client_id', ''),
+                creds.get('reddit_client_secret', ''),
+                creds.get('reddit_username', ''),
+                creds.get('reddit_password', ''),
+                creds.get('reddit_user_agent', 'RedditMonitor/1.0')
+            )
+            if not valid:
+                return jsonify({
+                    'success': False,
+                    'error': error,
+                    'validation_failed': True
+                }), 400
+        
         save_credentials(creds)
         
         return jsonify({
@@ -441,6 +511,36 @@ def update_credentials():
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/credentials/test-reddit', methods=['POST'])
+def test_reddit_credentials():
+    """Test Reddit API credentials without saving them."""
+    try:
+        data = request.get_json()
+        creds = load_credentials()
+        
+        # Use provided values or fall back to stored ones
+        client_id = data.get('reddit_client_id') if data.get('reddit_client_id') and '••••' not in data.get('reddit_client_id', '') else creds.get('reddit_client_id', '')
+        client_secret = data.get('reddit_client_secret') if data.get('reddit_client_secret') and '••••' not in data.get('reddit_client_secret', '') else creds.get('reddit_client_secret', '')
+        username = data.get('reddit_username') if data.get('reddit_username') and '••••' not in data.get('reddit_username', '') else creds.get('reddit_username', '')
+        password = data.get('reddit_password') if data.get('reddit_password') and '••••' not in data.get('reddit_password', '') else creds.get('reddit_password', '')
+        user_agent = data.get('reddit_user_agent') or creds.get('reddit_user_agent', 'RedditMonitor/1.0')
+        
+        if not all([client_id, client_secret, username, password]):
+            return jsonify({
+                'success': False,
+                'error': 'Missing required Reddit credentials'
+            }), 400
+        
+        valid, error = validate_reddit_credentials(client_id, client_secret, username, password, user_agent)
+        
+        return jsonify({
+            'success': valid,
+            'error': error
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/notifications/test', methods=['POST'])
