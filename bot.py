@@ -11,6 +11,20 @@ from colorama import init, Fore, Style
 import json
 import logging
 import apprise
+import requests
+
+# Fix for 'latin-1' codec error when Reddit posts contain Unicode characters (Cyrillic, etc.)
+# Override the default encoding used by requests/urllib3
+os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
+
+# Monkey-patch requests to handle Unicode properly in headers if needed
+_original_prepare_body = requests.models.PreparedRequest.prepare_body
+def _patched_prepare_body(self, data, files, json=None):
+    _original_prepare_body(self, data, files, json)
+    # Ensure body is encoded as UTF-8 if it's a string
+    if self.body and isinstance(self.body, str):
+        self.body = self.body.encode('utf-8')
+requests.models.PreparedRequest.prepare_body = _patched_prepare_body
 
 # Force UTF-8 encoding for stdout/stderr to handle Unicode characters
 if sys.stdout.encoding != 'utf-8':
