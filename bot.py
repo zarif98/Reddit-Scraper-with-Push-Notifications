@@ -1,7 +1,5 @@
 import praw
 import time
-import http.client
-import urllib
 from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 import os
@@ -185,20 +183,30 @@ class RedditMonitor:
             pickle.dump(self.processed_submissions, file)
 
     def send_error_notification(self, error_message):
+        """Send error notification via Apprise to all configured services."""
+        notification_urls = CREDENTIALS.get('notification_urls', [])
+        
+        if not notification_urls:
+            logging.warning("No notification services configured, cannot send error notification")
+            return
+        
         logging.error("Error occurred. Sending error notification...")
         try:
-            conn = http.client.HTTPSConnection("api.pushover.net:443")
-            conn.request("POST", "/1/messages.json",
-                         urllib.parse.urlencode({
-                             "token": os.getenv('PUSHOVER_APP_TOKEN'),
-                             "user": os.getenv('PUSHOVER_USER_KEY'),
-                             "message": f"Error in Reddit Scraper: {error_message}",
-                         }), {"Content-type": "application/x-www-form-urlencoded"})
-            response = conn.getresponse()
-            logging.error("Pushover API response: %s", response.read().decode())
-            conn.close()
+            apobj = apprise.Apprise()
+            for url in notification_urls:
+                apobj.add(url)
+            
+            result = apobj.notify(
+                body=f"Error in Reddit Scraper: {error_message}",
+                title="⚠️ Reddit Monitor Error",
+            )
+            
+            if result:
+                logging.info("Error notification sent successfully")
+            else:
+                logging.warning("Error notification may have failed")
         except Exception as e:
-            logging.error("Error sending error notification: %s", e)
+            logging.error(f"Error sending error notification: {e}")
 
     def search_reddit_for_keywords(self):
         try:
