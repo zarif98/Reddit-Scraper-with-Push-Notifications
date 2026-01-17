@@ -34,6 +34,7 @@ services:
     restart: unless-stopped
     environment:
       - DATA_DIR=/data
+      - TZ=America/Los_Angeles  # Set your timezone
     volumes:
       - ./data:/data
     depends_on:
@@ -48,6 +49,7 @@ services:
       - "5040:5001"
     environment:
       - DATA_DIR=/data
+      - TZ=America/Los_Angeles
     volumes:
       - ./data:/data
 
@@ -57,6 +59,8 @@ services:
     restart: unless-stopped
     ports:
       - "8080:3000"
+    environment:
+      - TZ=America/Los_Angeles
     depends_on:
       - api
 ```

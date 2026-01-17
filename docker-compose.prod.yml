@@ -19,6 +19,7 @@ services:
       - .env
     environment:
       - DATA_DIR=/data
+      - TZ=${TZ:-America/Los_Angeles}
     volumes:
       - ./data:/data
     depends_on:
@@ -34,6 +35,7 @@ services:
       - "${API_PORT:-5001}:5001"
     environment:
       - DATA_DIR=/data
+      - TZ=${TZ:-America/Los_Angeles}
     volumes:
       - ./data:/data
 
@@ -45,6 +47,7 @@ services:
     ports:
       - "${WEB_PORT:-3000}:3000"
     environment:
+      - TZ=${TZ:-America/Los_Angeles}
       # Uncomment for private Docker network (containers communicate by name)
       # - NEXT_PUBLIC_API_URL=http://api:5001
     depends_on:
