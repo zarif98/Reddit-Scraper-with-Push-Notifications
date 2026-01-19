@@ -121,6 +121,7 @@ wait_for_credentials()
 class RedditMonitor:
     processed_submissions_file = PROCESSED_SUBMISSIONS_FILE_PATH
     max_file_size = 5 * 1024 * 1024  # 5 MB
+    _auth_error_notified = False  # Track if we've sent a 401 notification
 
     def __init__(self, reddit, subreddit, keywords, min_upvotes=None, exclude_keywords=None, 
                  domain_contains=None, domain_excludes=None, flair_contains=None,
@@ -258,10 +259,20 @@ class RedditMonitor:
                     notifications_count += 1
 
             logging.info(f"Finished searching '{self.subreddit}' subreddit for keywords.")
+            # Reset auth error flag on successful request
+            RedditMonitor._auth_error_notified = False
         except Exception as e:
-            error_message = f"Error during Reddit search for '{self.subreddit}': {e}"
-            logging.error(error_message)
-            self.send_error_notification(error_message)
+            error_str = str(e)
+            # Check for 401 unauthorized - send only one notification, then suppress
+            if '401' in error_str or 'unauthorized' in error_str.lower() or 'Unauthorized' in error_str:
+                logging.warning(f"⚠️ Reddit API authentication failed for '{self.subreddit}' (401). Check your credentials or Reddit API status.")
+                if not RedditMonitor._auth_error_notified:
+                    self.send_error_notification("Reddit API authentication failed (401). Check your credentials or Reddit API status. Further 401 errors will be suppressed.")
+                    RedditMonitor._auth_error_notified = True
+            else:
+                error_message = f"Error during Reddit search for '{self.subreddit}': {e}"
+                logging.error(error_message)
+                self.send_error_notification(error_message)
 
 
 def sanitize_credential(value, name):
