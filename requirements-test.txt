@@ -1,0 +1,4 @@
+# Test dependencies
+pytest>=8.0.0
+pytest-mock>=3.12.0
+responses>=0.25.0
