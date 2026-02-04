@@ -22,8 +22,6 @@ services:
       - TZ=${TZ:-America/Los_Angeles}
     volumes:
       - ./data:/data
-    depends_on:
-      - api
 
   # API Server - manages search.json configuration
   api:
@@ -50,5 +48,3 @@ services:
       - TZ=${TZ:-America/Los_Angeles}
       # Uncomment for private Docker network (containers communicate by name)
       # - NEXT_PUBLIC_API_URL=http://api:5001
-    depends_on:
-      - api
