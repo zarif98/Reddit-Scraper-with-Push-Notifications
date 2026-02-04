@@ -1,5 +1,6 @@
 import praw
 import time
+import requests
 from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 import os
@@ -118,10 +119,48 @@ def wait_for_credentials():
 wait_for_credentials()
 
 
+def fetch_posts_json(subreddit, limit=10):
+    """Fetch posts from Reddit using JSON endpoint (no API auth required).
+    
+    Uses old.reddit.com which is more reliable for JSON endpoints.
+    Returns a list of post dicts with keys: id, title, url, score, permalink, domain, link_flair_text, author
+    """
+    url = f"https://old.reddit.com/r/{subreddit}/new.json?limit={limit}"
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }
+    
+    try:
+        response = requests.get(url, headers=headers, timeout=15)
+        response.raise_for_status()
+        
+        data = response.json()
+        posts = []
+        
+        for child in data.get('data', {}).get('children', []):
+            post_data = child.get('data', {})
+            posts.append({
+                'id': post_data.get('id', ''),
+                'title': post_data.get('title', ''),
+                'url': post_data.get('url', ''),
+                'score': post_data.get('score', 0),
+                'permalink': post_data.get('permalink', ''),
+                'domain': post_data.get('domain', ''),
+                'link_flair_text': post_data.get('link_flair_text', ''),
+                'author': post_data.get('author', ''),
+            })
+        
+        return posts
+    except requests.exceptions.RequestException as e:
+        logging.error(f"JSON endpoint error for r/{subreddit}: {e}")
+        return None
+
+
 class RedditMonitor:
     processed_submissions_file = PROCESSED_SUBMISSIONS_FILE_PATH
     max_file_size = 5 * 1024 * 1024  # 5 MB
     _auth_error_notified = False  # Track if we've sent a 401 notification
+    _using_json_fallback = False  # Track if we're using JSON fallback due to API errors
 
     def __init__(self, reddit, subreddit, keywords, min_upvotes=None, exclude_keywords=None, 
                  domain_contains=None, domain_excludes=None, flair_contains=None,
@@ -210,69 +249,120 @@ class RedditMonitor:
             logging.error(f"Error sending error notification: {e}")
 
     def search_reddit_for_keywords(self):
-        try:
-            logging.info(f"Searching '{self.subreddit}' subreddit for keywords...")
-            subreddit_obj = self.reddit.subreddit(self.subreddit)
-            notifications_count = 0
-
-            for submission in subreddit_obj.new(limit=10):  # Adjust the limit as needed
-                submission_id = f"{self.subreddit}-{submission.id}"
-                if submission_id in self.processed_submissions:
-                    logging.info(f"Skipping duplicate post: {submission.title}")
-                    continue
-
-                message = f"Match found in '{self.subreddit}' subreddit:\n" \
-                          f"Title: {submission.title}\n" \
-                          f"URL: {submission.url}\n" \
-                          f"Upvotes: {submission.score}\n" \
-                          f"Permalink: https://www.reddit.com{submission.permalink}\n" \
-                          ##f"Author: {submission.author.name}"
-                # Check if title contains all required keywords and none of the excluded ones
-                title_lower = submission.title.lower()
-                has_all_keywords = all(keyword in title_lower for keyword in self.keywords)
-                has_excluded = any(keyword in title_lower for keyword in self.exclude_keywords)
-                meets_upvotes = self.min_upvotes is None or submission.score >= self.min_upvotes
+        """Search subreddit for keywords. Uses PRAW API first, falls back to JSON endpoint on auth failure."""
+        notifications_count = 0
+        
+        # Decide whether to use API or JSON fallback
+        use_json = RedditMonitor._using_json_fallback or self.reddit is None
+        
+        if not use_json:
+            # Try PRAW API first
+            try:
+                logging.info(f"Searching '{self.subreddit}' subreddit for keywords (API mode)...")
+                subreddit_obj = self.reddit.subreddit(self.subreddit)
                 
-                # Domain filters
-                submission_domain = submission.domain.lower() if hasattr(submission, 'domain') else ''
-                meets_domain_contains = not self.domain_contains or any(d in submission_domain for d in self.domain_contains)
-                meets_domain_excludes = not any(d in submission_domain for d in self.domain_excludes)
+                for submission in subreddit_obj.new(limit=10):
+                    self._process_post(
+                        post_id=submission.id,
+                        title=submission.title,
+                        url=submission.url,
+                        score=submission.score,
+                        permalink=submission.permalink,
+                        domain=getattr(submission, 'domain', ''),
+                        flair=getattr(submission, 'link_flair_text', '') or '',
+                        author=submission.author.name if submission.author else ''
+                    )
                 
-                # Flair filter
-                submission_flair = (submission.link_flair_text or '').lower() if hasattr(submission, 'link_flair_text') else ''
-                meets_flair = not self.flair_contains or any(f.lower() in submission_flair for f in self.flair_contains)
+                logging.info(f"Finished searching '{self.subreddit}' subreddit for keywords.")
+                # Reset flags on success
+                RedditMonitor._auth_error_notified = False
+                RedditMonitor._using_json_fallback = False
+                return
                 
-                # Author filters
-                author_name = submission.author.name.lower() if submission.author else ''
-                meets_author_includes = not self.author_includes or author_name in [a.lower() for a in self.author_includes]
-                meets_author_excludes = author_name not in [a.lower() for a in self.author_excludes]
-                
-                if (has_all_keywords and not has_excluded and meets_upvotes and 
-                    meets_domain_contains and meets_domain_excludes and 
-                    meets_flair and meets_author_includes and meets_author_excludes):
-                    logging.info(message)
-                    self.send_push_notification(message)
-                    logging.info('-' * 40)
-
-                    self.processed_submissions.add(submission_id)
-                    self.save_processed_submissions()  # Save the processed submissions to file
-                    notifications_count += 1
-
-            logging.info(f"Finished searching '{self.subreddit}' subreddit for keywords.")
-            # Reset auth error flag on successful request
-            RedditMonitor._auth_error_notified = False
-        except Exception as e:
-            error_str = str(e)
-            # Check for 401 unauthorized - send only one notification, then suppress
-            if '401' in error_str or 'unauthorized' in error_str.lower() or 'Unauthorized' in error_str:
-                logging.warning(f"⚠️ Reddit API authentication failed for '{self.subreddit}' (401). Check your credentials or Reddit API status.")
-                if not RedditMonitor._auth_error_notified:
-                    self.send_error_notification("Reddit API authentication failed (401). Check your credentials or Reddit API status. Further 401 errors will be suppressed.")
-                    RedditMonitor._auth_error_notified = True
-            else:
-                error_message = f"Error during Reddit search for '{self.subreddit}': {e}"
-                logging.error(error_message)
-                self.send_error_notification(error_message)
+            except Exception as e:
+                error_str = str(e)
+                # Check for 401 unauthorized - switch to JSON fallback
+                if '401' in error_str or 'unauthorized' in error_str.lower():
+                    logging.warning(f"⚠️ Reddit API auth failed for '{self.subreddit}'. Switching to JSON fallback mode.")
+                    if not RedditMonitor._auth_error_notified:
+                        self.send_error_notification("Reddit API authentication failed (401). Switching to API-free JSON mode.")
+                        RedditMonitor._auth_error_notified = True
+                    RedditMonitor._using_json_fallback = True
+                    use_json = True  # Fall through to JSON mode
+                else:
+                    error_message = f"Error during Reddit search for '{self.subreddit}': {e}"
+                    logging.error(error_message)
+                    self.send_error_notification(error_message)
+                    return
+        
+        # JSON fallback mode
+        if use_json:
+            logging.info(f"Searching '{self.subreddit}' subreddit for keywords (JSON mode - no auth)...")
+            posts = fetch_posts_json(self.subreddit, limit=10)
+            
+            if posts is None:
+                logging.error(f"Failed to fetch posts via JSON for '{self.subreddit}'")
+                return
+            
+            for post in posts:
+                self._process_post(
+                    post_id=post['id'],
+                    title=post['title'],
+                    url=post['url'],
+                    score=post['score'],
+                    permalink=post['permalink'],
+                    domain=post['domain'],
+                    flair=post['link_flair_text'] or '',
+                    author=post['author']
+                )
+            
+            logging.info(f"Finished searching '{self.subreddit}' subreddit (JSON mode).")
+    
+    def _process_post(self, post_id, title, url, score, permalink, domain, flair, author):
+        """Process a single post and send notification if it matches filters."""
+        submission_id = f"{self.subreddit}-{post_id}"
+        if submission_id in self.processed_submissions:
+            logging.debug(f"Skipping duplicate post: {title}")
+            return False
+        
+        message = f"Match found in '{self.subreddit}' subreddit:\n" \
+                  f"Title: {title}\n" \
+                  f"URL: {url}\n" \
+                  f"Upvotes: {score}\n" \
+                  f"Permalink: https://www.reddit.com{permalink}\n"
+        
+        # Check filters
+        title_lower = title.lower()
+        has_all_keywords = all(keyword in title_lower for keyword in self.keywords)
+        has_excluded = any(keyword in title_lower for keyword in self.exclude_keywords)
+        meets_upvotes = self.min_upvotes is None or score >= self.min_upvotes
+        
+        # Domain filters
+        submission_domain = domain.lower()
+        meets_domain_contains = not self.domain_contains or any(d in submission_domain for d in self.domain_contains)
+        meets_domain_excludes = not any(d in submission_domain for d in self.domain_excludes)
+        
+        # Flair filter
+        submission_flair = flair.lower()
+        meets_flair = not self.flair_contains or any(f.lower() in submission_flair for f in self.flair_contains)
+        
+        # Author filters
+        author_name = author.lower()
+        meets_author_includes = not self.author_includes or author_name in [a.lower() for a in self.author_includes]
+        meets_author_excludes = author_name not in [a.lower() for a in self.author_excludes]
+        
+        if (has_all_keywords and not has_excluded and meets_upvotes and 
+            meets_domain_contains and meets_domain_excludes and 
+            meets_flair and meets_author_includes and meets_author_excludes):
+            logging.info(message)
+            self.send_push_notification(message)
+            logging.info('-' * 40)
+            
+            self.processed_submissions.add(submission_id)
+            self.save_processed_submissions()
+            return True
+        
+        return False
 
 
 def sanitize_credential(value, name):
