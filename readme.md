@@ -231,6 +231,30 @@ services:
 
 This allows the frontend container to reach the API via the internal Docker network (`http://api:5001`) without exposing the API port on the host.
 
+## 🔄 API Fallback Mode
+
+If Reddit's API becomes unavailable or your credentials expire, the bot will automatically switch to **JSON fallback mode**. This mode fetches posts directly from Reddit's public JSON endpoints without requiring API authentication.
+
+### How it works
+
+1. Bot attempts to use the Reddit API (PRAW) for each request
+2. If authentication fails (401 error), bot automatically switches to JSON fallback
+3. A warning banner appears at the top of the web UI indicating fallback mode is active
+4. Bot continues monitoring normally using `old.reddit.com/r/subreddit/new.json`
+5. When API access is restored, the warning disappears automatically
+
+### Limitations of fallback mode
+
+- May be subject to stricter rate limiting
+- Some advanced Reddit features may not be available
+- Less reliable than authenticated API access
+
+### To restore API access
+
+1. Check your Reddit API credentials in Settings
+2. Verify your app hasn't been rate-limited or banned
+3. Create new API credentials at https://www.reddit.com/prefs/apps if needed
+
 ## 🔧 Troubleshooting
 
 ### Bot shows "Waiting for credentials"

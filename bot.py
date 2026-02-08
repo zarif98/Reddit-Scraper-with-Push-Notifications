@@ -16,7 +16,22 @@ import apprise
 DATA_DIR = '/data' # Base directory for mounted host data
 CONFIG_FILE_PATH = os.path.join(DATA_DIR, 'search.json')
 PROCESSED_SUBMISSIONS_FILE_PATH = os.path.join(DATA_DIR, 'processed_submissions.pkl')
+BOT_STATUS_FILE_PATH = os.path.join(DATA_DIR, 'bot_status.json')
 # -------------------------------------
+
+
+def save_bot_status(using_fallback, message=None):
+    """Save bot status to file for API/frontend to read."""
+    try:
+        status = {
+            'using_json_fallback': using_fallback,
+            'message': message,
+            'updated_at': datetime.now(timezone.utc).isoformat()
+        }
+        with open(BOT_STATUS_FILE_PATH, 'w') as f:
+            json.dump(status, f)
+    except Exception as e:
+        logging.error(f"Failed to save bot status: {e}")
 
 # Initialize colorama and logging
 init(autoreset=True)
@@ -276,6 +291,8 @@ class RedditMonitor:
                 logging.info(f"Finished searching '{self.subreddit}' subreddit for keywords.")
                 # Reset flags on success
                 RedditMonitor._auth_error_notified = False
+                if RedditMonitor._using_json_fallback:
+                    save_bot_status(False, "API authentication restored")
                 RedditMonitor._using_json_fallback = False
                 return
                 
@@ -287,6 +304,7 @@ class RedditMonitor:
                     if not RedditMonitor._auth_error_notified:
                         self.send_error_notification("Reddit API authentication failed (401). Switching to API-free JSON mode.")
                         RedditMonitor._auth_error_notified = True
+                        save_bot_status(True, "Reddit API authentication failed. Using JSON fallback mode (no API credentials required).")
                     RedditMonitor._using_json_fallback = True
                     use_json = True  # Fall through to JSON mode
                 else:

@@ -18,6 +18,7 @@ CORS(app)  # Enable CORS for all routes
 # Configuration
 DATA_DIR = os.environ.get('DATA_DIR', os.path.dirname(os.path.abspath(__file__)))
 CONFIG_FILE_PATH = os.path.join(DATA_DIR, 'search.json')
+BOT_STATUS_FILE_PATH = os.path.join(DATA_DIR, 'bot_status.json')
 
 # Default color palette (matching Pager app)
 DEFAULT_COLORS = [
@@ -113,6 +114,29 @@ def health_check():
         'timestamp': datetime.now().isoformat(),
         'config_path': CONFIG_FILE_PATH
     })
+
+
+@app.route('/api/status', methods=['GET'])
+def bot_status():
+    """Get bot status including fallback mode warning."""
+    try:
+        if os.path.exists(BOT_STATUS_FILE_PATH):
+            with open(BOT_STATUS_FILE_PATH, 'r') as f:
+                status = json.load(f)
+            return jsonify(status)
+        else:
+            # No status file yet - bot hasn't reported
+            return jsonify({
+                'using_json_fallback': False,
+                'message': None,
+                'updated_at': None
+            })
+    except Exception as e:
+        return jsonify({
+            'using_json_fallback': False,
+            'message': None,
+            'error': str(e)
+        })
 
 
 @app.route('/api/subreddits/search', methods=['GET'])

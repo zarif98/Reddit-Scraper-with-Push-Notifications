@@ -17,6 +17,7 @@ export default function Home() {
   const [isCreating, setIsCreating] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isConfigured, setIsConfigured] = useState<boolean | null>(null);
+  const [fallbackWarning, setFallbackWarning] = useState<string | null>(null);
 
   const checkCredentials = async () => {
     try {
@@ -26,6 +27,20 @@ export default function Home() {
     } catch (err) {
       // If API is down, assume configured (use env vars)
       setIsConfigured(true);
+    }
+  };
+
+  const checkBotStatus = async () => {
+    try {
+      const response = await fetch(`${getApiUrl()}/api/status`);
+      const data = await response.json();
+      if (data.using_json_fallback && data.message) {
+        setFallbackWarning(data.message);
+      } else {
+        setFallbackWarning(null);
+      }
+    } catch (err) {
+      // Ignore status check errors
     }
   };
 
@@ -47,6 +62,7 @@ export default function Home() {
   useEffect(() => {
     checkCredentials();
     fetchMonitors();
+    checkBotStatus();
   }, []);
 
   const handleToggle = async (id: string, enabled: boolean) => {
@@ -168,6 +184,19 @@ export default function Home() {
           </div>
         </div>
       </header>
+
+      {/* Fallback Warning Banner */}
+      {fallbackWarning && (
+        <div className="bg-amber-500/20 border-b border-amber-500/30 px-4 py-3">
+          <div className="max-w-lg mx-auto flex items-start gap-3">
+            <span className="text-xl flex-shrink-0">⚠️</span>
+            <div className="text-sm">
+              <p className="font-semibold text-amber-200">API Fallback Mode Active</p>
+              <p className="text-amber-100/80 mt-1">{fallbackWarning}</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Warning Banner - when credentials not configured */}
       {isConfigured === false && (
