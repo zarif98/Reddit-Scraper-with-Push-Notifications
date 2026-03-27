@@ -1,5 +1,9 @@
 # Reddit Monitor with Push Notifications
 
+<p align="center">
+  <img src="frontend/public/icon-512.png" alt="Reddit Monitor Icon" width="128" height="128">
+</p>
+
 A self-hosted Reddit monitoring bot with a modern web UI. Get instant notifications via **Discord, Slack, Telegram, Pushover, and 80+ other services** when posts matching your keywords appear in your favorite subreddits.
 
 ## 📸 Screenshots
