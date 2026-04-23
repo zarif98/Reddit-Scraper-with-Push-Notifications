@@ -171,13 +171,43 @@ def fetch_posts_json(subreddit, limit=10):
         return None
 
 
+def fetch_bst_thread_comments_json(subreddit, thread_id, limit=100):
+    """Fetch top-level comments from a Reddit thread via JSON endpoint, sorted by new."""
+    url = f"https://old.reddit.com/r/{subreddit}/comments/{thread_id}.json?limit={limit}&sort=new"
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }
+    try:
+        response = requests.get(url, headers=headers, timeout=15)
+        response.raise_for_status()
+        data = response.json()
+        comments = []
+        for child in data[1]['data']['children']:
+            if child.get('kind') != 't1':
+                continue
+            d = child['data']
+            comments.append({
+                'id': d.get('id', ''),
+                'body': d.get('body', ''),
+                'author': d.get('author', ''),
+                'score': d.get('score', 0),
+                'permalink': d.get('permalink', ''),
+            })
+        return comments
+    except Exception as e:
+        logging.error(f"Error fetching BST comments for thread {thread_id}: {e}")
+        return None
+
+
 class RedditMonitor:
     processed_submissions_file = PROCESSED_SUBMISSIONS_FILE_PATH
     max_file_size = 5 * 1024 * 1024  # 5 MB
     _auth_error_notified = False  # Track if we've sent a 401 notification
     _using_json_fallback = False  # Track if we're using JSON fallback due to API errors
+    _bst_thread_cache = {}  # subreddit+pattern -> {thread_id, cached_at}
+    BST_THREAD_CACHE_TTL = 3600  # refresh cached thread ID every hour
 
-    def __init__(self, reddit, subreddit, keywords, min_upvotes=None, exclude_keywords=None, 
+    def __init__(self, reddit, subreddit, keywords, min_upvotes=None, exclude_keywords=None,
                  domain_contains=None, domain_excludes=None, flair_contains=None,
                  author_includes=None, author_excludes=None, **kwargs):
         self.reddit = reddit
@@ -190,7 +220,17 @@ class RedditMonitor:
         self.flair_contains = flair_contains or []
         self.author_includes = author_includes or []
         self.author_excludes = author_excludes or []
+        self.monitor_type = kwargs.get('monitor_type', 'posts')
+        self.thread_title_pattern = kwargs.get('thread_title_pattern', 'Buy/Sell/Trade')
+        self.keyword_logic = kwargs.get('keyword_logic', 'any')
         self.load_processed_submissions()
+
+    def run(self):
+        """Dispatch to the correct monitor method based on monitor_type."""
+        if self.monitor_type == 'bst_comments':
+            self.search_bst_comments()
+        else:
+            self.search_reddit_for_keywords()
 
     def send_push_notification(self, message, title=None):
         """Send notification via Apprise to all configured services."""
@@ -262,6 +302,106 @@ class RedditMonitor:
                 logging.warning("Error notification may have failed")
         except Exception as e:
             logging.error(f"Error sending error notification: {e}")
+
+    def find_current_bst_thread(self):
+        """Find the thread ID of the current weekly BST megathread, with 1-hour caching."""
+        cache_key = f"{self.subreddit}-{self.thread_title_pattern}"
+        cached = RedditMonitor._bst_thread_cache.get(cache_key)
+        if cached and (time.time() - cached['cached_at']) < RedditMonitor.BST_THREAD_CACHE_TTL:
+            return cached['thread_id']
+
+        thread_id = None
+
+        if self.reddit and not RedditMonitor._using_json_fallback:
+            try:
+                sub = self.reddit.subreddit(self.subreddit)
+                # Check stickied posts first (most reliable for weekly threads)
+                for slot in [1, 2]:
+                    try:
+                        sticky = sub.sticky(number=slot)
+                        if self.thread_title_pattern.lower() in sticky.title.lower():
+                            thread_id = sticky.id
+                            break
+                    except Exception:
+                        pass
+                # Fall back to scanning recent posts
+                if not thread_id:
+                    for post in sub.new(limit=25):
+                        if self.thread_title_pattern.lower() in post.title.lower():
+                            thread_id = post.id
+                            break
+            except Exception as e:
+                logging.warning(f"PRAW error finding BST thread: {e}")
+
+        # JSON fallback
+        if not thread_id:
+            posts = fetch_posts_json(self.subreddit, limit=25)
+            if posts:
+                for post in posts:
+                    if self.thread_title_pattern.lower() in post['title'].lower():
+                        parts = post['permalink'].strip('/').split('/')
+                        if 'comments' in parts:
+                            thread_id = parts[parts.index('comments') + 1]
+                            break
+
+        if thread_id:
+            RedditMonitor._bst_thread_cache[cache_key] = {'thread_id': thread_id, 'cached_at': time.time()}
+            logging.info(f"BST thread located: {thread_id}")
+        else:
+            logging.warning(f"Could not find BST thread matching '{self.thread_title_pattern}' in r/{self.subreddit}")
+
+        return thread_id
+
+    def search_bst_comments(self):
+        """Scan the current weekly BST megathread comments for size/keyword matches."""
+        thread_id = self.find_current_bst_thread()
+        if not thread_id:
+            return
+
+        logging.info(f"Scanning BST thread {thread_id} comments in r/{self.subreddit}...")
+        comments = fetch_bst_thread_comments_json(self.subreddit, thread_id)
+        if comments is None:
+            return
+
+        for comment in comments:
+            self._process_comment(
+                comment_id=comment['id'],
+                body=comment['body'],
+                author=comment['author'],
+                permalink=comment['permalink'],
+            )
+        logging.info(f"Finished scanning BST thread comments in r/{self.subreddit}.")
+
+    def _process_comment(self, comment_id, body, author, permalink):
+        """Check a BST comment against keyword filters and notify on match."""
+        submission_id = f"{self.subreddit}-comment-{comment_id}"
+        if submission_id in self.processed_submissions:
+            return False
+
+        body_lower = body.lower()
+
+        if self.keyword_logic == 'any':
+            has_keywords = any(kw.lower() in body_lower for kw in self.keywords)
+        else:
+            has_keywords = all(kw.lower() in body_lower for kw in self.keywords)
+
+        has_excluded = any(kw.lower() in body_lower for kw in self.exclude_keywords)
+        meets_author_excludes = author.lower() not in [a.lower() for a in self.author_excludes]
+
+        if has_keywords and not has_excluded and meets_author_excludes:
+            excerpt = body[:300] + '...' if len(body) > 300 else body
+            message = (
+                f"BST listing match in r/{self.subreddit}!\n"
+                f"u/{author}:\n{excerpt}\n"
+                f"Link: https://www.reddit.com{permalink}"
+            )
+            self.send_push_notification(message, title=f"FMF BST Match")
+            logging.info(f"BST match: u/{author} | {body[:80]}...")
+            self.processed_submissions.add(submission_id)
+            self.save_processed_submissions()
+            return True
+
+        return False
 
     def search_reddit_for_keywords(self):
         """Search subreddit for keywords. Uses PRAW API first, falls back to JSON endpoint on auth failure."""
@@ -485,7 +625,7 @@ def main():
         
         if monitors_to_run:
             with ThreadPoolExecutor() as executor:
-                futures = [executor.submit(RedditMonitor(reddit, **params).search_reddit_for_keywords) for params in monitors_to_run]
+                futures = [executor.submit(RedditMonitor(reddit, **params).run) for params in monitors_to_run]
 
                 for future in futures:
                     try:
