@@ -19,6 +19,9 @@ A self-hosted Reddit monitoring bot with a modern web UI. Get instant notificati
 - **🔔 80+ Notification Services** - Discord, Slack, Telegram, Pushover, ntfy, Email, and more via [Apprise](https://github.com/caronc/apprise)
 - **⏱️ Per-Monitor Refresh** - Each monitor can have its own check interval (1 min to 1 hour)
 - **🎯 Advanced Filters** - Keywords, exclusions, domain filters, flair filters, author filters
+- **🛟 Resilient Fetching** - Falls through multiple data sources (authenticated API → RSS → JSON) so it keeps working even when Reddit blocks anonymous access
+- **🔓 Credentials Optional** - Runs on the public RSS feed with no Reddit app at all; add an app for full filtering and higher limits
+- **📟 Uptime Kuma Ready** - Optional push heartbeats report real health (not just "container running") and flag fallback degradation
 - **🐳 Docker Ready** - Easy deployment with Docker Compose
 - **🔄 Auto Updates** - Works with Watchtower for automatic container updates
 - **⚙️ Web-Based Setup** - Configure Reddit & notification services via the UI
@@ -97,10 +100,14 @@ All data is stored in the `/data` volume:
 
 ### Getting Reddit API Credentials
 
+Credentials are **optional** — without them the bot uses the public RSS pathway (see [Data Source Pathways](#-data-source-pathways)). Adding a Reddit app enables the authenticated API, which is unblocked, higher-rate, and required for **score and domain filters**.
+
 1. Go to https://www.reddit.com/prefs/apps
 2. Click "Create App" or "Create Another App"
 3. Select "script" as the app type
 4. Note your `client_id` (under the app name) and `client_secret`
+
+> **Two auth modes:** providing only `client_id` + `client_secret` runs read-only (app-only) OAuth; adding `username` + `password` enables full login. Either way, paste credentials carefully — a lookalike character (e.g. a Cyrillic "І" for a Latin "I") causes a confusing 401, which the bot now detects and surfaces as a warning in the UI.
 
 ### Setting Up Notifications
 
@@ -128,16 +135,18 @@ Each monitor supports these options:
 | `subreddit` | Subreddit to monitor (without r/) | Required |
 | `keywords` | Words to match in post titles | Required |
 | `exclude_keywords` | Words to exclude | `[]` |
-| `min_upvotes` | Minimum upvotes required | `null` |
+| `min_upvotes` | Minimum upvotes required ⚠️ | `null` |
 | `cooldown_minutes` | Refresh interval (1-60 min) | `10` |
 | `max_post_age_hours` | Ignore posts older than this | `12` |
-| `domain_contains` | Only match these domains | `[]` |
-| `domain_excludes` | Exclude these domains | `[]` |
+| `domain_contains` | Only match these domains ⚠️ | `[]` |
+| `domain_excludes` | Exclude these domains ⚠️ | `[]` |
 | `flair_contains` | Only match these flairs | `[]` |
 | `author_includes` | Only from these authors | `[]` |
 | `author_excludes` | Ignore these authors | `[]` |
 | `enabled` | Active/inactive toggle | `true` |
 | `color` | UI card color | Auto-assigned |
+
+> ⚠️ **Score and domain filters require the authenticated API.** The RSS pathway doesn't expose upvotes or the external domain, so `min_upvotes`, `domain_contains`, and `domain_excludes` are not applied while running on RSS (they fail safe — no false notifications). The web UI hides these fields when no Reddit app is configured.
 
 ### Example search.json
 
@@ -171,6 +180,30 @@ python api.py
 
 # Run bot (in another terminal)
 python bot.py
+```
+
+### Running tests
+
+```bash
+pip install -r requirements-test.txt
+pytest
+```
+
+### Project layout
+
+`bot.py` and `api.py` are thin entrypoints; shared logic lives in the `reddit_scraper` package:
+
+```
+reddit_scraper/
+├── config.py         # data paths (DATA_DIR), search.json access, source order
+├── credentials.py    # load/sanitize/encoding-guard, authenticate (PRAW)
+├── status.py         # bot_status.json writer
+├── notifications.py  # Apprise dispatch
+├── sources.py        # oauth/rss/json fetchers + dispatcher, throttle, cooldown
+├── health.py         # Uptime Kuma heartbeats
+└── monitor.py        # RedditMonitor (filtering + notify)
+bot.py                # main loop / scheduler
+api.py                # Flask web API (delegates config/credentials to the package)
 ```
 
 ### Frontend
@@ -235,34 +268,57 @@ services:
 
 This allows the frontend container to reach the API via the internal Docker network (`http://api:5001`) without exposing the API port on the host.
 
-## 🔄 API Fallback Mode
+## 🛟 Data Source Pathways
 
-If Reddit's API becomes unavailable or your credentials expire, the bot will automatically switch to **JSON fallback mode**. This mode fetches posts directly from Reddit's public JSON endpoints without requiring API authentication.
+The bot fetches posts/comments through an ordered chain of sources, trying each in turn and falling through on failure. A source that errors or gets blocked is put on a short cooldown so a dead endpoint isn't hammered every cycle.
 
-### How it works
+| Source | Auth | Notes |
+|--------|------|-------|
+| `oauth` | Reddit app | Authenticated API (full login **or** read-only app-only). Unblocked, 100 req/min, the only source that provides **score** and **domain**. |
+| `rss` | None | `www.reddit.com/r/<sub>/new/.rss`. Works without credentials but is per-IP rate-limited, so requests are throttled. No score/domain (see filter note above). |
+| `json` | None | `old.reddit.com/.../new.json`. Mostly blocked by Reddit now; kept as a last resort. |
 
-1. Bot attempts to use the Reddit API (PRAW) for each request
-2. If authentication fails (401 error), bot automatically switches to JSON fallback
-3. A warning banner appears at the top of the web UI indicating fallback mode is active
-4. Bot continues monitoring normally using `old.reddit.com/r/subreddit/new.json`
-5. When API access is restored, the warning disappears automatically
+The active source is shown in the web UI; when OAuth is configured but the bot has fallen back, a banner indicates the degradation.
 
-### Limitations of fallback mode
+### Configuring the order
 
-- May be subject to stricter rate limiting
-- Some advanced Reddit features may not be available
-- Less reliable than authenticated API access
+Default is `oauth → rss → json`. Override per deployment via `search.json`:
 
-### To restore API access
+```json
+{
+    "source_order": ["oauth", "rss", "json"],
+    "subreddits_to_search": [ ... ]
+}
+```
 
-1. Check your Reddit API credentials in Settings
-2. Verify your app hasn't been rate-limited or banned
-3. Create new API credentials at https://www.reddit.com/prefs/apps if needed
+…or with the `REDDIT_SOURCE_ORDER=oauth,rss,json` environment variable (`search.json` takes precedence).
+
+### Environment variables
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `REDDIT_SOURCE_ORDER` | `oauth,rss,json` | Source chain order (overridden by `search.json`) |
+| `RSS_MIN_INTERVAL_SECONDS` | `4` | Minimum gap between RSS requests (rate-limit safety) |
+| `SOURCE_COOLDOWN_SECONDS` | `300` | How long to skip a source after it errors/gets blocked |
+| `RSS_USER_AGENT` | (browser UA) | Override the User-Agent used for RSS requests |
+| `KUMA_PUSH_URL` | — | Uptime Kuma Push URL for the primary health heartbeat |
+| `KUMA_FETCH_STALE_SECONDS` | `1500` | Seconds without a successful fetch before reporting DOWN |
+| `KUMA_FALLBACK_PUSH_URL` | — | Optional second Push URL that flags `oauth → fallback` degradation |
+
+## 📟 Monitoring with Uptime Kuma
+
+A standard up/down monitor (e.g. "is the container running") can't tell that the bot is busy *failing* — it keeps looping and looks healthy. Instead, use **Push** monitors driven by the bot:
+
+1. **Primary health** — create a Push monitor in Uptime Kuma, set its heartbeat interval (~150s) and retries, and put its URL in `KUMA_PUSH_URL`. The bot reports UP only while Reddit fetches actually succeed; it reports DOWN (or stops beating) during a block or crash.
+2. **Fallback alert (optional)** — create a second Push monitor and set `KUMA_FALLBACK_PUSH_URL`. It goes DOWN when an OAuth app is configured but the bot is running on RSS/JSON, so you're alerted to the degradation while the primary monitor stays UP (deals are still flowing).
 
 ## 🔧 Troubleshooting
 
-### Bot shows "Waiting for credentials"
-Configure credentials at `http://YOUR_IP:8080` → Settings
+### Bot is running on RSS / no notifications with score or domain filters
+You have no working Reddit app, so the bot is on the RSS pathway where those filters don't apply. Configure (or fix) Reddit credentials at `http://YOUR_IP:8080` → Settings. See [Data Source Pathways](#-data-source-pathways).
+
+### "Credentials warning" / repeated 401, falls back to RSS
+A credential likely contains a non-ASCII lookalike character (e.g. Cyrillic "І" vs Latin "I"), which fails auth. Re-copy `client_secret` from https://www.reddit.com/prefs/apps and re-enter it in Settings.
 
 ### CORS errors
 Ensure API container is running and port mapping is correct
