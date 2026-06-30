@@ -33,6 +33,20 @@ DEFAULT_COLORS = [
 ]
 
 
+OPTIONAL_LIST_FIELDS = ['exclude_keywords', 'domain_contains', 'domain_excludes',
+                        'flair_contains', 'author_includes', 'author_excludes']
+
+
+def clean_monitor(monitor):
+    """Strip optional fields that are empty or null to keep search.json tidy."""
+    for field in OPTIONAL_LIST_FIELDS:
+        if field in monitor and not monitor[field]:
+            del monitor[field]
+    if 'min_upvotes' in monitor and monitor['min_upvotes'] is None:
+        del monitor['min_upvotes']
+    return monitor
+
+
 def load_config():
     """Load configuration from search.json file."""
     try:
@@ -57,30 +71,11 @@ def load_config():
             if 'enabled' not in monitor:
                 monitor['enabled'] = True
                 updated = True
-            if 'exclude_keywords' not in monitor:
-                monitor['exclude_keywords'] = []
-                updated = True
             if 'cooldown_minutes' not in monitor:
                 monitor['cooldown_minutes'] = 10
                 updated = True
             if 'max_post_age_hours' not in monitor:
                 monitor['max_post_age_hours'] = 12
-                updated = True
-            # New filter fields
-            if 'domain_contains' not in monitor:
-                monitor['domain_contains'] = []
-                updated = True
-            if 'domain_excludes' not in monitor:
-                monitor['domain_excludes'] = []
-                updated = True
-            if 'flair_contains' not in monitor:
-                monitor['flair_contains'] = []
-                updated = True
-            if 'author_includes' not in monitor:
-                monitor['author_includes'] = []
-                updated = True
-            if 'author_excludes' not in monitor:
-                monitor['author_excludes'] = []
                 updated = True
         
         # Save if we added any fields
@@ -116,27 +111,49 @@ def health_check():
     })
 
 
+def get_source_capability():
+    """Report which data-source pathways are configured and whether the OAuth API
+    (required for score/domain filters) is available. Used by the UI to hide filters
+    that the active pathways can't provide."""
+    valid = ('oauth', 'rss', 'json')
+    try:
+        config = load_config() or {}
+    except Exception:
+        config = {}
+    order = [s for s in (config.get('source_order') or ['oauth', 'rss', 'json']) if s in valid]
+    if not order:
+        order = ['oauth', 'rss', 'json']
+
+    creds = load_credentials()
+    client_id = creds.get('reddit_client_id') or os.getenv('REDDIT_CLIENT_ID')
+    client_secret = creds.get('reddit_client_secret') or os.getenv('REDDIT_CLIENT_SECRET')
+    oauth_available = bool(client_id and client_secret) and 'oauth' in order
+
+    return {
+        'source_order': order,
+        'oauth_available': oauth_available,
+        # score and domain are only available through the authenticated API
+        'rich_filters_supported': oauth_available,
+    }
+
+
 @app.route('/api/status', methods=['GET'])
 def bot_status():
-    """Get bot status including fallback mode warning."""
+    """Get bot status including fallback mode warning and source capability."""
+    status = {'using_json_fallback': False, 'message': None, 'updated_at': None}
     try:
         if os.path.exists(BOT_STATUS_FILE_PATH):
             with open(BOT_STATUS_FILE_PATH, 'r') as f:
                 status = json.load(f)
-            return jsonify(status)
-        else:
-            # No status file yet - bot hasn't reported
-            return jsonify({
-                'using_json_fallback': False,
-                'message': None,
-                'updated_at': None
-            })
     except Exception as e:
-        return jsonify({
-            'using_json_fallback': False,
-            'message': None,
-            'error': str(e)
-        })
+        status['error'] = str(e)
+
+    try:
+        status.update(get_source_capability())
+    except Exception as e:
+        status.setdefault('error', str(e))
+
+    return jsonify(status)
 
 
 @app.route('/api/subreddits/search', methods=['GET'])
@@ -254,10 +271,11 @@ def create_monitor():
             'author_excludes': data.get('author_excludes', [])
         }
         
+        clean_monitor(new_monitor)
         monitors.append(new_monitor)
         config['subreddits_to_search'] = monitors
         save_config(config)
-        
+
         return jsonify(new_monitor), 201
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -324,9 +342,10 @@ def update_monitor(monitor_id):
                 if 'author_excludes' in data:
                     monitors[i]['author_excludes'] = data['author_excludes']
                 
+                clean_monitor(monitors[i])
                 config['subreddits_to_search'] = monitors
                 save_config(config)
-                
+
                 return jsonify(monitors[i])
         
         return jsonify({'error': 'Monitor not found'}), 404

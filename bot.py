@@ -5,6 +5,11 @@ from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 import os
 import pickle
+import re
+import html
+import threading
+import xml.etree.ElementTree as ET
+from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor
 from colorama import init, Fore, Style
 import json
@@ -20,12 +25,331 @@ BOT_STATUS_FILE_PATH = os.path.join(DATA_DIR, 'bot_status.json')
 # -------------------------------------
 
 
-def save_bot_status(using_fallback, message=None):
+# --- Uptime Kuma heartbeat (Push monitor) ---
+# Tracks the last time ANY Reddit listing fetch genuinely succeeded.
+_LAST_FETCH_SUCCESS_TS = None
+
+
+def record_fetch_success():
+    """Mark that a Reddit fetch just succeeded (used by the Kuma heartbeat)."""
+    global _LAST_FETCH_SUCCESS_TS
+    _LAST_FETCH_SUCCESS_TS = time.time()
+
+
+def send_kuma_heartbeat():
+    """Report bot health to an Uptime Kuma Push monitor.
+
+    Reports UP only if a Reddit fetch has succeeded within KUMA_FETCH_STALE_SECONDS;
+    otherwise reports DOWN. This makes Kuma alert on a 403-storm / silent failure even
+    though the container is still running (a Docker monitor can't see that). If the
+    container dies entirely, no beats are sent and Kuma's own timeout marks it down.
+
+    No-op unless KUMA_PUSH_URL is set, e.g.
+        KUMA_PUSH_URL=http://192.168.50.124:3444/api/push/<token>
+    """
+    push_url = os.getenv('KUMA_PUSH_URL')
+    if not push_url:
+        return
+
+    # Must exceed your longest monitor interval (monitors default to every 10 min).
+    stale_after = int(os.getenv('KUMA_FETCH_STALE_SECONDS', '1500'))  # 25 min
+    now = time.time()
+    last = _LAST_FETCH_SUCCESS_TS
+
+    if last is not None and (now - last) < stale_after:
+        status, msg = 'up', f"ok (last good fetch {int(now - last)}s ago)"
+    elif last is None:
+        status, msg = 'down', 'no successful Reddit fetch since startup'
+    else:
+        status, msg = 'down', f"no successful Reddit fetch for {int(now - last)}s (Reddit blocking?)"
+
+    try:
+        requests.get(push_url, params={'status': status, 'msg': msg}, timeout=5)
+    except requests.RequestException as e:
+        logging.warning(f"Failed to send Uptime Kuma heartbeat: {e}")
+
+    send_kuma_fallback_heartbeat()
+
+
+def _oauth_expected():
+    """True if the authenticated API is configured and in the source order, i.e. running
+    on RSS/JSON instead is a degradation worth alerting on (not an intentional setup)."""
+    creds = CREDENTIALS or {}
+    has_app = bool(creds.get('reddit_client_id') and creds.get('reddit_client_secret'))
+    return has_app and 'oauth' in get_source_order()
+
+
+def send_kuma_fallback_heartbeat():
+    """Report to a SECOND Uptime Kuma Push monitor that tracks whether the bot is using
+    the authenticated API vs a fallback source. Reports DOWN when OAuth is expected but
+    the bot is currently on RSS/JSON, so you're notified about the degradation while the
+    primary monitor stays UP (data is still flowing). No-op unless KUMA_FALLBACK_PUSH_URL
+    is set."""
+    url = os.getenv('KUMA_FALLBACK_PUSH_URL')
+    if not url:
+        return
+
+    if not _oauth_expected():
+        status, msg = 'up', f"using {_active_source or 'rss/json'} (by configuration)"
+    elif _active_source == 'oauth':
+        status, msg = 'up', 'using authenticated API'
+    else:
+        status, msg = 'down', f"OAuth unavailable - on fallback source ({_active_source or 'none'})"
+
+    try:
+        requests.get(url, params={'status': status, 'msg': msg}, timeout=5)
+    except requests.RequestException as e:
+        logging.warning(f"Failed to send Uptime Kuma fallback heartbeat: {e}")
+
+
+# ===================== Reddit data-source pathways =====================
+# Posts/comments can be fetched through several pathways, tried in order:
+#   'oauth' - authenticated PRAW API (full login OR app-only read-only). 100 req/min, never blocked.
+#   'rss'   - www.reddit.com Atom feed. No credentials, but per-IP rate-limited (throttled below).
+#   'json'  - anonymous old.reddit.com JSON. Mostly blocked now; kept as last resort.
+# The order is configurable via search.json ("source_order") or REDDIT_SOURCE_ORDER env var.
+VALID_SOURCES = ('oauth', 'rss', 'json')
+DEFAULT_SOURCE_ORDER = ['oauth', 'rss', 'json']
+ATOM_NS = {'a': 'http://www.w3.org/2005/Atom'}
+RSS_USER_AGENT = os.getenv(
+    'RSS_USER_AGENT',
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 '
+    '(KHTML, like Gecko) Version/17.0 Safari/605.1.15'
+)
+
+_SOURCE_ORDER = None
+_active_source = None
+_source_cooldown_until = {}      # source name -> epoch time until which it is skipped
+_source_state_lock = threading.Lock()
+SOURCE_COOLDOWN_SECONDS = int(os.getenv('SOURCE_COOLDOWN_SECONDS', '300'))  # skip a blocked source for 5 min
+
+# RSS is aggressively per-IP rate-limited, so serialize requests with a minimum gap.
+_rss_throttle_lock = threading.Lock()
+_rss_last_request = [0.0]
+RSS_MIN_INTERVAL = float(os.getenv('RSS_MIN_INTERVAL_SECONDS', '4'))
+
+
+def get_source_order():
+    return list(_SOURCE_ORDER) if _SOURCE_ORDER else list(DEFAULT_SOURCE_ORDER)
+
+
+def set_source_order(order):
+    """Set the ordered list of data-source pathways, keeping only valid names."""
+    global _SOURCE_ORDER
+    cleaned = [s.strip() for s in (order or []) if s and s.strip() in VALID_SOURCES]
+    _SOURCE_ORDER = cleaned or list(DEFAULT_SOURCE_ORDER)
+    logging.info(f"Reddit source order: {' -> '.join(_SOURCE_ORDER)}")
+
+
+def apply_source_order_from_config(config):
+    """Resolve source order from search.json ('source_order'), then REDDIT_SOURCE_ORDER env, then default."""
+    order = (config or {}).get('source_order')
+    if not order:
+        env = os.getenv('REDDIT_SOURCE_ORDER')
+        order = env.split(',') if env else None
+    set_source_order(order)
+
+
+def _source_available(name):
+    with _source_state_lock:
+        return time.time() >= _source_cooldown_until.get(name, 0)
+
+
+def _mark_source_down(name, seconds=None):
+    cooldown = seconds or SOURCE_COOLDOWN_SECONDS
+    with _source_state_lock:
+        _source_cooldown_until[name] = time.time() + cooldown
+    logging.warning(f"Pausing Reddit source '{name}' for {cooldown}s after failure")
+
+
+def _set_active_source(source):
+    """Record (and surface) the data source currently serving data, only when it changes."""
+    global _active_source
+    if source != _active_source:
+        _active_source = source
+        logging.info(f"📡 Active Reddit data source: {source}")
+        save_bot_status(source != 'oauth', f"Active data source: {source}", active_source=source)
+
+
+def _rss_throttle():
+    """Block until at least RSS_MIN_INTERVAL seconds have passed since the last RSS request."""
+    with _rss_throttle_lock:
+        wait = RSS_MIN_INTERVAL - (time.time() - _rss_last_request[0])
+        if wait > 0:
+            time.sleep(wait)
+        _rss_last_request[0] = time.time()
+
+
+def notify_error(message):
+    """Module-level error notification (used by the source dispatcher)."""
+    urls = CREDENTIALS.get('notification_urls', []) if CREDENTIALS else []
+    if not urls:
+        return
+    try:
+        apobj = apprise.Apprise()
+        for url in urls:
+            apobj.add(url)
+        apobj.notify(body=f"Error in Reddit Scraper: {message}", title="⚠️ Reddit Monitor Error")
+    except Exception as e:
+        logging.error(f"Error sending notification: {e}")
+
+
+def _fetch_posts_oauth(reddit, subreddit, limit):
+    """Fetch posts via the authenticated PRAW API. Raises on auth/API errors."""
+    sub = reddit.subreddit(subreddit)
+    posts = []
+    for s in sub.new(limit=limit):
+        posts.append({
+            'id': s.id,
+            'title': s.title,
+            'url': s.url,
+            'score': s.score,
+            'permalink': s.permalink,
+            'domain': getattr(s, 'domain', '') or '',
+            'link_flair_text': getattr(s, 'link_flair_text', '') or '',
+            'author': s.author.name if s.author else '',
+        })
+    return posts
+
+
+def fetch_posts_rss(subreddit, limit=10):
+    """Fetch posts via the www.reddit.com Atom feed (no auth). Raises on 403/429 so the
+    dispatcher can fall through and back off. Note: RSS exposes no score and no external
+    domain, so those fields degrade to 0 / '' (score/domain filters won't match)."""
+    _rss_throttle()
+    url = f"https://www.reddit.com/r/{subreddit}/new/.rss?limit={limit}"
+    response = requests.get(url, headers={'User-Agent': RSS_USER_AGENT}, timeout=15)
+    if response.status_code in (403, 429):
+        raise RuntimeError(f"RSS blocked ({response.status_code})")
+    response.raise_for_status()
+
+    root = ET.fromstring(response.content)
+    posts = []
+    for entry in root.findall('a:entry', ATOM_NS)[:limit]:
+        def text(tag):
+            el = entry.find(f'a:{tag}', ATOM_NS)
+            return el.text if (el is not None and el.text) else ''
+
+        raw_id = text('id')                       # e.g. "t3_abc123"
+        post_id = raw_id.split('_')[-1] if raw_id else ''
+        link_el = entry.find('a:link', ATOM_NS)
+        href = link_el.get('href') if link_el is not None else ''
+        permalink = urlparse(href).path if href else ''
+        author_el = entry.find('a:author/a:name', ATOM_NS)
+        author = (author_el.text or '') if author_el is not None else ''
+        if author.startswith('/u/'):
+            author = author[3:]
+        cat_el = entry.find('a:category', ATOM_NS)
+        flair = cat_el.get('term') if cat_el is not None else ''
+
+        posts.append({
+            'id': post_id,
+            'title': text('title'),
+            'url': href,
+            'score': 0,            # not exposed via RSS
+            'permalink': permalink,
+            'domain': '',          # not exposed via RSS
+            'link_flair_text': flair or '',
+            'author': author,
+        })
+    return posts
+
+
+def fetch_thread_comments_rss(subreddit, thread_id, limit=500):
+    """Fetch a thread's comments via the www.reddit.com Atom feed (no auth)."""
+    _rss_throttle()
+    url = f"https://www.reddit.com/r/{subreddit}/comments/{thread_id}/.rss?sort=new&limit={limit}"
+    response = requests.get(url, headers={'User-Agent': RSS_USER_AGENT}, timeout=15)
+    if response.status_code in (403, 429):
+        raise RuntimeError(f"RSS blocked ({response.status_code})")
+    response.raise_for_status()
+
+    root = ET.fromstring(response.content)
+    comments = []
+    for entry in root.findall('a:entry', ATOM_NS):
+        id_el = entry.find('a:id', ATOM_NS)
+        raw_id = (id_el.text or '') if id_el is not None else ''
+        if not raw_id.startswith('t1_'):          # keep comments only, not the post itself
+            continue
+        content_el = entry.find('a:content', ATOM_NS)
+        body_html = (content_el.text or '') if content_el is not None else ''
+        body = re.sub(r'<[^>]+>', '', html.unescape(body_html)).strip()
+        author_el = entry.find('a:author/a:name', ATOM_NS)
+        author = (author_el.text or '') if author_el is not None else ''
+        if author.startswith('/u/'):
+            author = author[3:]
+        link_el = entry.find('a:link', ATOM_NS)
+        permalink = urlparse(link_el.get('href')).path if link_el is not None else ''
+        comments.append({
+            'id': raw_id.split('_')[-1],
+            'body': body,
+            'author': author,
+            'score': 0,
+            'permalink': permalink,
+        })
+    return comments
+
+
+def fetch_posts(subreddit, limit, reddit):
+    """Try each configured source in order until one returns data.
+
+    Returns (posts, source_name), or (None, None) if every source failed.
+    A source that errors or returns nothing is put on a short cooldown so we
+    don't keep hammering a blocked endpoint every cycle.
+    """
+    for source in get_source_order():
+        if not _source_available(source):
+            continue
+        try:
+            if source == 'oauth':
+                if reddit is None:
+                    continue
+                posts = _fetch_posts_oauth(reddit, subreddit, limit)
+            elif source == 'rss':
+                posts = fetch_posts_rss(subreddit, limit)
+            elif source == 'json':
+                posts = fetch_posts_json(subreddit, limit)
+            else:
+                continue
+        except Exception as e:
+            error_str = str(e)
+            if source == 'oauth' and ('401' in error_str or 'unauthorized' in error_str.lower()):
+                if not RedditMonitor._auth_error_notified:
+                    notify_error("Reddit API authentication failed (401). Falling back to alternative sources (RSS/JSON).")
+                    RedditMonitor._auth_error_notified = True
+            logging.warning(f"Reddit source '{source}' failed for r/{subreddit}: {e}")
+            _mark_source_down(source)
+            continue
+
+        if posts is None:
+            logging.warning(f"Reddit source '{source}' returned nothing for r/{subreddit}")
+            _mark_source_down(source)
+            continue
+
+        if source == 'oauth':
+            RedditMonitor._auth_error_notified = False
+        record_fetch_success()
+        _set_active_source(source)
+        return posts, source
+
+    logging.error(f"All Reddit sources failed for r/{subreddit}")
+    return None, None
+# =======================================================================
+
+
+# Persistent warning surfaced to the UI when a credential contains characters that
+# can't be used for auth (e.g. a pasted Cyrillic lookalike) - see check_credential_encoding.
+CREDENTIAL_WARNING = None
+
+
+def save_bot_status(using_fallback, message=None, active_source=None):
     """Save bot status to file for API/frontend to read."""
     try:
         status = {
             'using_json_fallback': using_fallback,
+            'active_source': active_source,
             'message': message,
+            'credentials_warning': CREDENTIAL_WARNING,
             'updated_at': datetime.now(timezone.utc).isoformat()
         }
         with open(BOT_STATUS_FILE_PATH, 'w') as f:
@@ -106,32 +430,66 @@ def load_credentials():
 # Load credentials globally (with retry loop for first-time setup)
 CREDENTIALS = None
 
-def wait_for_credentials():
-    """Wait for Reddit credentials to be configured via web UI."""
+
+def check_credential_encoding(creds):
+    """Warn loudly if any Reddit credential contains non-ASCII characters.
+
+    Reddit credentials are always ASCII; a stray non-ASCII char (e.g. a Cyrillic
+    lookalike pasted in place of a Latin letter) is silently stripped by
+    sanitize_credential, producing a *wrong* value that fails auth with a confusing
+    401. Detect it up front and surface it to the UI instead of failing silently.
+    """
+    global CREDENTIAL_WARNING
+    offenders = []
+    for key in ('reddit_client_id', 'reddit_client_secret', 'reddit_user_agent',
+                'reddit_username', 'reddit_password'):
+        value = creds.get(key) or ''
+        bad = [(i, hex(ord(c))) for i, c in enumerate(value) if ord(c) > 127]
+        if bad:
+            offenders.append(f"{key} (positions {[i for i, _ in bad]})")
+
+    if offenders:
+        CREDENTIAL_WARNING = (
+            "Non-ASCII characters detected in: " + "; ".join(offenders) +
+            ". This usually means a credential was pasted with a lookalike character "
+            "(e.g. Cyrillic 'І' for Latin 'I') and will cause a 401 / fall back to RSS. "
+            "Re-copy the affected credential from https://www.reddit.com/prefs/apps."
+        )
+        logging.error("🚨 " + CREDENTIAL_WARNING)
+    else:
+        CREDENTIAL_WARNING = None
+    return offenders
+
+
+def detect_auth_capability():
+    """Load credentials and report which Reddit auth pathway is available.
+
+    Credentials are now optional: the bot can run on RSS/JSON alone. Full OAuth
+    (login) is used when username+password are present; app-only read-only OAuth
+    when only client id+secret are present; otherwise no API auth.
+    """
     global CREDENTIALS
-    # Only Reddit credentials are required - notifications are optional
-    required_creds = ['reddit_client_id', 'reddit_client_secret', 'reddit_user_agent', 'reddit_username', 'reddit_password']
-    
-    while True:
-        CREDENTIALS = load_credentials()
-        missing = [key for key in required_creds if not CREDENTIALS.get(key)]
-        
-        if not missing:
-            # Warn if no notification URLs configured
-            if not CREDENTIALS.get('notification_urls'):
-                logging.warning("⚠️ No notification services configured - notifications disabled")
-                logging.info("Configure notifications via web UI at http://YOUR_NAS_IP:8080 → Settings")
-            else:
-                logging.info(f"🔔 Configured {len(CREDENTIALS['notification_urls'])} notification service(s)")
-            logging.info("✅ Reddit credentials configured! Starting bot...")
-            return
-        
-        logging.warning(f'⏳ Waiting for Reddit credentials: {", ".join(missing)}')
-        logging.info('Configure via web UI at http://YOUR_NAS_IP:8080')
-        time.sleep(30)  # Check every 30 seconds
+    CREDENTIALS = load_credentials()
+    check_credential_encoding(CREDENTIALS)
+
+    has_app = bool(CREDENTIALS.get('reddit_client_id') and CREDENTIALS.get('reddit_client_secret'))
+    has_login = has_app and bool(CREDENTIALS.get('reddit_username') and CREDENTIALS.get('reddit_password'))
+
+    if has_login:
+        logging.info("🔐 Reddit auth: full OAuth (logged-in).")
+    elif has_app:
+        logging.info("🔓 Reddit auth: read-only OAuth (app-only, no login).")
+    else:
+        logging.info("🌐 No Reddit API credentials - using RSS/JSON pathways only.")
+        logging.info("   Add an app (client id/secret) via the web UI for higher, unblocked limits.")
+
+    if CREDENTIALS.get('notification_urls'):
+        logging.info(f"🔔 Configured {len(CREDENTIALS['notification_urls'])} notification service(s)")
+    else:
+        logging.warning("⚠️ No notification services configured - notifications disabled")
 
 
-wait_for_credentials()
+detect_auth_capability()
 
 
 def fetch_posts_json(subreddit, limit=10):
@@ -164,14 +522,15 @@ def fetch_posts_json(subreddit, limit=10):
                 'link_flair_text': post_data.get('link_flair_text', ''),
                 'author': post_data.get('author', ''),
             })
-        
+
+        record_fetch_success()
         return posts
     except requests.exceptions.RequestException as e:
         logging.error(f"JSON endpoint error for r/{subreddit}: {e}")
         return None
 
 
-def fetch_bst_thread_comments_json(subreddit, thread_id, limit=100):
+def fetch_thread_comments_json(subreddit, thread_id, limit=500):
     """Fetch top-level comments from a Reddit thread via JSON endpoint, sorted by new."""
     url = f"https://old.reddit.com/r/{subreddit}/comments/{thread_id}.json?limit={limit}&sort=new"
     headers = {
@@ -181,8 +540,13 @@ def fetch_bst_thread_comments_json(subreddit, thread_id, limit=100):
         response = requests.get(url, headers=headers, timeout=15)
         response.raise_for_status()
         data = response.json()
+
+        if not isinstance(data, list) or len(data) < 2:
+            logging.error(f"Unexpected response structure for thread {thread_id}")
+            return None
+
         comments = []
-        for child in data[1]['data']['children']:
+        for child in data[1].get('data', {}).get('children', []):
             if child.get('kind') != 't1':
                 continue
             d = child['data']
@@ -195,7 +559,7 @@ def fetch_bst_thread_comments_json(subreddit, thread_id, limit=100):
             })
         return comments
     except Exception as e:
-        logging.error(f"Error fetching BST comments for thread {thread_id}: {e}")
+        logging.error(f"Error fetching comments for thread {thread_id}: {e}")
         return None
 
 
@@ -204,8 +568,8 @@ class RedditMonitor:
     max_file_size = 5 * 1024 * 1024  # 5 MB
     _auth_error_notified = False  # Track if we've sent a 401 notification
     _using_json_fallback = False  # Track if we're using JSON fallback due to API errors
-    _bst_thread_cache = {}  # subreddit+pattern -> {thread_id, cached_at}
-    BST_THREAD_CACHE_TTL = 3600  # refresh cached thread ID every hour
+    _thread_cache = {}  # subreddit+pattern -> {thread_id, cached_at}
+    THREAD_CACHE_TTL = 3600  # refresh cached thread ID every hour
 
     def __init__(self, reddit, subreddit, keywords, min_upvotes=None, exclude_keywords=None,
                  domain_contains=None, domain_excludes=None, flair_contains=None,
@@ -227,8 +591,8 @@ class RedditMonitor:
 
     def run(self):
         """Dispatch to the correct monitor method based on monitor_type."""
-        if self.monitor_type == 'bst_comments':
-            self.search_bst_comments()
+        if self.monitor_type == 'thread_comments':
+            self.search_thread_comments()
         else:
             self.search_reddit_for_keywords()
 
@@ -303,63 +667,60 @@ class RedditMonitor:
         except Exception as e:
             logging.error(f"Error sending error notification: {e}")
 
-    def find_current_bst_thread(self):
-        """Find the thread ID of the current weekly BST megathread, with 1-hour caching."""
+    def find_current_thread(self):
+        """Find the thread ID of the current weekly megathread, with 1-hour caching."""
         cache_key = f"{self.subreddit}-{self.thread_title_pattern}"
-        cached = RedditMonitor._bst_thread_cache.get(cache_key)
-        if cached and (time.time() - cached['cached_at']) < RedditMonitor.BST_THREAD_CACHE_TTL:
+        cached = RedditMonitor._thread_cache.get(cache_key)
+        if cached and (time.time() - cached['cached_at']) < RedditMonitor.THREAD_CACHE_TTL:
             return cached['thread_id']
 
         thread_id = None
+        pattern = self.thread_title_pattern.lower()
 
-        if self.reddit and not RedditMonitor._using_json_fallback:
+        # Stickied posts are the most reliable signal, but only PRAW exposes them.
+        if self.reddit and _source_available('oauth'):
             try:
                 sub = self.reddit.subreddit(self.subreddit)
-                # Check stickied posts first (most reliable for weekly threads)
                 for slot in [1, 2]:
                     try:
                         sticky = sub.sticky(number=slot)
-                        if self.thread_title_pattern.lower() in sticky.title.lower():
+                        if pattern in sticky.title.lower():
                             thread_id = sticky.id
                             break
                     except Exception:
                         pass
-                # Fall back to scanning recent posts
-                if not thread_id:
-                    for post in sub.new(limit=25):
-                        if self.thread_title_pattern.lower() in post.title.lower():
-                            thread_id = post.id
-                            break
             except Exception as e:
-                logging.warning(f"PRAW error finding BST thread: {e}")
+                logging.warning(f"PRAW error finding sticky BST thread: {e}")
 
-        # JSON fallback
+        # Otherwise scan recent posts via the source chain (oauth -> rss -> json).
         if not thread_id:
-            posts = fetch_posts_json(self.subreddit, limit=25)
-            if posts:
-                for post in posts:
-                    if self.thread_title_pattern.lower() in post['title'].lower():
+            posts, _ = fetch_posts(self.subreddit, 25, self.reddit)
+            for post in (posts or []):
+                if pattern in (post['title'] or '').lower():
+                    if post.get('id'):
+                        thread_id = post['id']
+                    else:
                         parts = post['permalink'].strip('/').split('/')
                         if 'comments' in parts:
                             thread_id = parts[parts.index('comments') + 1]
-                            break
+                    break
 
         if thread_id:
-            RedditMonitor._bst_thread_cache[cache_key] = {'thread_id': thread_id, 'cached_at': time.time()}
-            logging.info(f"BST thread located: {thread_id}")
+            RedditMonitor._thread_cache[cache_key] = {'thread_id': thread_id, 'cached_at': time.time()}
+            logging.info(f"Thread located: {thread_id}")
         else:
-            logging.warning(f"Could not find BST thread matching '{self.thread_title_pattern}' in r/{self.subreddit}")
+            logging.warning(f"Could not find thread matching '{self.thread_title_pattern}' in r/{self.subreddit}")
 
         return thread_id
 
-    def search_bst_comments(self):
-        """Scan the current weekly BST megathread comments for size/keyword matches."""
-        thread_id = self.find_current_bst_thread()
+    def search_thread_comments(self):
+        """Scan a pinned/recurring thread's comments for keyword matches."""
+        thread_id = self.find_current_thread()
         if not thread_id:
             return
 
-        logging.info(f"Scanning BST thread {thread_id} comments in r/{self.subreddit}...")
-        comments = fetch_bst_thread_comments_json(self.subreddit, thread_id)
+        logging.info(f"Scanning thread {thread_id} comments in r/{self.subreddit}...")
+        comments = self._fetch_comments(thread_id)
         if comments is None:
             return
 
@@ -370,7 +731,49 @@ class RedditMonitor:
                 author=comment['author'],
                 permalink=comment['permalink'],
             )
-        logging.info(f"Finished scanning BST thread comments in r/{self.subreddit}.")
+        logging.info(f"Finished scanning thread comments in r/{self.subreddit}.")
+
+    def _fetch_comments(self, thread_id):
+        """Fetch a thread's comments through the configured source chain (oauth -> rss -> json)."""
+        for source in get_source_order():
+            if not _source_available(source):
+                continue
+            try:
+                if source == 'oauth':
+                    if self.reddit is None:
+                        continue
+                    submission = self.reddit.submission(id=thread_id)
+                    submission.comment_sort = 'new'
+                    submission.comments.replace_more(limit=0)
+                    comments = [
+                        {
+                            'id': c.id,
+                            'body': c.body,
+                            'author': c.author.name if c.author else '[deleted]',
+                            'permalink': c.permalink,
+                        }
+                        for c in submission.comments
+                    ]
+                elif source == 'rss':
+                    comments = fetch_thread_comments_rss(self.subreddit, thread_id)
+                elif source == 'json':
+                    comments = fetch_thread_comments_json(self.subreddit, thread_id)
+                else:
+                    continue
+            except Exception as e:
+                logging.warning(f"Comment source '{source}' failed for thread {thread_id}: {e}")
+                _mark_source_down(source)
+                continue
+
+            if comments is None:
+                _mark_source_down(source)
+                continue
+
+            record_fetch_success()
+            return comments
+
+        logging.error(f"All sources failed fetching comments for thread {thread_id}")
+        return None
 
     def _process_comment(self, comment_id, body, author, permalink):
         """Check a BST comment against keyword filters and notify on match."""
@@ -386,9 +789,11 @@ class RedditMonitor:
             has_keywords = all(kw.lower() in body_lower for kw in self.keywords)
 
         has_excluded = any(kw.lower() in body_lower for kw in self.exclude_keywords)
-        meets_author_excludes = author.lower() not in [a.lower() for a in self.author_excludes]
+        author_lower = author.lower()
+        meets_author_includes = not self.author_includes or author_lower in [a.lower() for a in self.author_includes]
+        meets_author_excludes = author_lower not in [a.lower() for a in self.author_excludes]
 
-        if has_keywords and not has_excluded and meets_author_excludes:
+        if has_keywords and not has_excluded and meets_author_includes and meets_author_excludes:
             excerpt = body[:300] + '...' if len(body) > 300 else body
             message = (
                 f"BST listing match in r/{self.subreddit}!\n"
@@ -404,77 +809,27 @@ class RedditMonitor:
         return False
 
     def search_reddit_for_keywords(self):
-        """Search subreddit for keywords. Uses PRAW API first, falls back to JSON endpoint on auth failure."""
-        notifications_count = 0
-        
-        # Decide whether to use API or JSON fallback
-        use_json = RedditMonitor._using_json_fallback or self.reddit is None
-        
-        if not use_json:
-            # Try PRAW API first
-            try:
-                logging.info(f"Searching '{self.subreddit}' subreddit for keywords (API mode)...")
-                subreddit_obj = self.reddit.subreddit(self.subreddit)
-                
-                for submission in subreddit_obj.new(limit=10):
-                    self._process_post(
-                        post_id=submission.id,
-                        title=submission.title,
-                        url=submission.url,
-                        score=submission.score,
-                        permalink=submission.permalink,
-                        domain=getattr(submission, 'domain', ''),
-                        flair=getattr(submission, 'link_flair_text', '') or '',
-                        author=submission.author.name if submission.author else ''
-                    )
-                
-                logging.info(f"Finished searching '{self.subreddit}' subreddit for keywords.")
-                # Reset flags on success
-                RedditMonitor._auth_error_notified = False
-                if RedditMonitor._using_json_fallback:
-                    save_bot_status(False, "API authentication restored")
-                RedditMonitor._using_json_fallback = False
-                return
-                
-            except Exception as e:
-                error_str = str(e)
-                # Check for 401 unauthorized - switch to JSON fallback
-                if '401' in error_str or 'unauthorized' in error_str.lower():
-                    logging.warning(f"⚠️ Reddit API auth failed for '{self.subreddit}'. Switching to JSON fallback mode.")
-                    if not RedditMonitor._auth_error_notified:
-                        self.send_error_notification("Reddit API authentication failed (401). Switching to API-free JSON mode.")
-                        RedditMonitor._auth_error_notified = True
-                        save_bot_status(True, "Reddit API authentication failed. Using JSON fallback mode (no API credentials required).")
-                    RedditMonitor._using_json_fallback = True
-                    use_json = True  # Fall through to JSON mode
-                else:
-                    error_message = f"Error during Reddit search for '{self.subreddit}': {e}"
-                    logging.error(error_message)
-                    self.send_error_notification(error_message)
-                    return
-        
-        # JSON fallback mode
-        if use_json:
-            logging.info(f"Searching '{self.subreddit}' subreddit for keywords (JSON mode - no auth)...")
-            posts = fetch_posts_json(self.subreddit, limit=10)
-            
-            if posts is None:
-                logging.error(f"Failed to fetch posts via JSON for '{self.subreddit}'")
-                return
-            
-            for post in posts:
-                self._process_post(
-                    post_id=post['id'],
-                    title=post['title'],
-                    url=post['url'],
-                    score=post['score'],
-                    permalink=post['permalink'],
-                    domain=post['domain'],
-                    flair=post['link_flair_text'] or '',
-                    author=post['author']
-                )
-            
-            logging.info(f"Finished searching '{self.subreddit}' subreddit (JSON mode).")
+        """Search a subreddit for keywords, fetching posts through the configured source chain."""
+        logging.info(f"Searching '{self.subreddit}' subreddit for keywords...")
+        posts, source = fetch_posts(self.subreddit, 10, self.reddit)
+
+        if posts is None:
+            logging.error(f"Failed to fetch posts for '{self.subreddit}' from all sources")
+            return
+
+        for post in posts:
+            self._process_post(
+                post_id=post['id'],
+                title=post['title'],
+                url=post['url'],
+                score=post['score'],
+                permalink=post['permalink'],
+                domain=post['domain'],
+                flair=post['link_flair_text'] or '',
+                author=post['author']
+            )
+
+        logging.info(f"Finished searching '{self.subreddit}' subreddit (source: {source}).")
     
     def _process_post(self, post_id, title, url, score, permalink, domain, flair, author):
         """Process a single post and send notification if it matches filters."""
@@ -536,19 +891,37 @@ def sanitize_credential(value, name):
 
 
 def authenticate_reddit():
-    logging.info("Authenticating Reddit...")
+    """Build a PRAW client for the 'oauth' pathway.
+
+    Returns a logged-in client if username+password are set, a read-only
+    (app-only) client if only client id+secret are set, or None if no app
+    credentials exist (the bot then relies on the RSS/JSON pathways).
+    """
     # Sanitize credentials to remove any accidental Unicode characters
-    client_id = sanitize_credential(CREDENTIALS['reddit_client_id'], 'client_id')
-    client_secret = sanitize_credential(CREDENTIALS['reddit_client_secret'], 'client_secret')
-    user_agent = sanitize_credential(CREDENTIALS['reddit_user_agent'], 'user_agent')
-    username = sanitize_credential(CREDENTIALS['reddit_username'], 'username')
-    password = sanitize_credential(CREDENTIALS['reddit_password'], 'password')
-    
-    return praw.Reddit(client_id=client_id,
-                       client_secret=client_secret,
-                       user_agent=user_agent,
-                       username=username,
-                       password=password)
+    client_id = sanitize_credential(CREDENTIALS.get('reddit_client_id'), 'client_id')
+    client_secret = sanitize_credential(CREDENTIALS.get('reddit_client_secret'), 'client_secret')
+    user_agent = sanitize_credential(CREDENTIALS.get('reddit_user_agent'), 'user_agent') or 'reddit-scraper/1.0'
+    username = sanitize_credential(CREDENTIALS.get('reddit_username'), 'username')
+    password = sanitize_credential(CREDENTIALS.get('reddit_password'), 'password')
+
+    if not (client_id and client_secret):
+        logging.info("No Reddit app credentials - skipping OAuth pathway.")
+        return None
+
+    if username and password:
+        logging.info("Authenticating Reddit (full OAuth)...")
+        return praw.Reddit(client_id=client_id,
+                           client_secret=client_secret,
+                           user_agent=user_agent,
+                           username=username,
+                           password=password)
+
+    logging.info("Authenticating Reddit (read-only, app-only)...")
+    reddit = praw.Reddit(client_id=client_id,
+                         client_secret=client_secret,
+                         user_agent=user_agent)
+    reddit.read_only = True
+    return reddit
 
 def load_config():
     """Load configuration from search.json file."""
@@ -578,8 +951,9 @@ def main():
     config = load_config()
     if config is None:
         exit(1)
-    
+
     subreddits_to_search = config.get('subreddits_to_search', [])
+    apply_source_order_from_config(config)
     last_config_mtime = get_config_mtime()
     
     # Track last run time for each monitor by ID
@@ -595,6 +969,7 @@ def main():
             if new_config is not None:
                 config = new_config
                 subreddits_to_search = config.get('subreddits_to_search', [])
+                apply_source_order_from_config(config)
                 last_config_mtime = current_mtime
                 logging.info("Configuration reloaded successfully.")
             else:
@@ -636,6 +1011,9 @@ def main():
                         RedditMonitor(reddit, subreddit='error', keywords=[]).send_error_notification(error_message)
         else:
             logging.debug("No monitors due to run this cycle")
+
+        # Report health to Uptime Kuma (up only if a Reddit fetch succeeded recently)
+        send_kuma_heartbeat()
 
         # Base cycle interval - check every 2 minutes (monitors have their own schedules)
         logging.info(f"Cycle {loopTime} complete. Sleeping for 2 minutes before next check...")

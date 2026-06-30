@@ -18,6 +18,8 @@ export default function Home() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isConfigured, setIsConfigured] = useState<boolean | null>(null);
   const [fallbackWarning, setFallbackWarning] = useState<string | null>(null);
+  const [activeSource, setActiveSource] = useState<string | null>(null);
+  const [richFiltersSupported, setRichFiltersSupported] = useState(true);
 
   const checkCredentials = async () => {
     try {
@@ -34,6 +36,8 @@ export default function Home() {
     try {
       const response = await fetch(`${getApiUrl()}/api/status`);
       const data = await response.json();
+      setActiveSource(data.active_source ?? null);
+      setRichFiltersSupported(data.rich_filters_supported !== false);
       if (data.using_json_fallback && data.message) {
         setFallbackWarning(data.message);
       } else {
@@ -193,6 +197,11 @@ export default function Home() {
             <div className="text-sm">
               <p className="font-semibold text-amber-200">API Fallback Mode Active</p>
               <p className="text-amber-100/80 mt-1">{fallbackWarning}</p>
+              {(activeSource === 'rss' || activeSource === 'json') && (
+                <p className="text-amber-100/60 mt-1">
+                  Score and domain filters are unavailable on this source and won&apos;t be applied.
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -273,6 +282,8 @@ export default function Home() {
           onClose={() => setIsModalOpen(false)}
           onSave={handleSave}
           onDelete={handleDelete}
+          richFiltersSupported={richFiltersSupported}
+          activeSource={activeSource}
         />
       )}
 

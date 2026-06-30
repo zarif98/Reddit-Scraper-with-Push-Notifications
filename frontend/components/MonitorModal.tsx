@@ -18,6 +18,10 @@ interface MonitorModalProps {
     onClose: () => void;
     onSave: (monitor: Partial<Monitor>) => void;
     onDelete: (id: string) => void;
+    // False when no authenticated Reddit API is available, so score/domain
+    // filters (which RSS/JSON can't provide) are hidden.
+    richFiltersSupported?: boolean;
+    activeSource?: string | null;
 }
 
 type TabType = 'filters' | 'alerts' | 'settings';
@@ -27,7 +31,9 @@ export default function MonitorModal({
     isCreating,
     onClose,
     onSave,
-    onDelete
+    onDelete,
+    richFiltersSupported = true,
+    activeSource = null,
 }: MonitorModalProps) {
     const [activeTab, setActiveTab] = useState<TabType>('filters');
     const [formData, setFormData] = useState<Partial<Monitor>>(DEFAULT_MONITOR);
@@ -438,6 +444,14 @@ export default function MonitorModal({
                                         </div>
                                     </div>
 
+                                    {richFiltersSupported && (
+                                    <>
+                                    {(activeSource === 'rss' || activeSource === 'json') && (
+                                        <div className="text-xs text-amber-300/80 bg-amber-500/10 border border-amber-500/20 rounded-md px-3 py-2">
+                                            Currently fetching via <span className="font-semibold uppercase">{activeSource}</span>. Score and domain filters are paused until the Reddit API recovers.
+                                        </div>
+                                    )}
+
                                     {/* Min Upvotes */}
                                     <div>
                                         <label className="text-sm text-white/70 mb-2 block">Minimum Upvotes</label>
@@ -522,6 +536,8 @@ export default function MonitorModal({
                                             </button>
                                         </div>
                                     </div>
+                                    </>
+                                    )}
 
                                     {/* Flair Contains */}
                                     <div>
