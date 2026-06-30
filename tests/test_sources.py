@@ -141,3 +141,27 @@ class TestFetchPostsDispatcher:
         assert source == 'oauth'
         assert sources._active_source == 'oauth'
         assert sources._LAST_FETCH_SUCCESS_TS is not None
+
+
+class TestAuthErrorNotificationGuard:
+
+    def test_concurrent_401s_notify_only_once(self, monkeypatch):
+        """6 monitors hitting the same OAuth 401 in parallel must produce one alert."""
+        from concurrent.futures import ThreadPoolExecutor
+
+        def oauth_401(reddit, sub, lim):
+            raise RuntimeError("received 401 HTTP response")
+        monkeypatch.setattr(sources, '_fetch_posts_oauth', oauth_401)
+        monkeypatch.setattr(sources, 'fetch_posts_rss', lambda sub, lim: self._post())
+
+        calls = []
+        monkeypatch.setattr(sources.notifications, 'notify_error', lambda msg: calls.append(msg))
+
+        with ThreadPoolExecutor(max_workers=6) as ex:
+            list(ex.map(lambda i: sources.fetch_posts('gamedeals', 10, reddit=object()), range(6)))
+
+        assert len(calls) == 1
+
+    def _post(self):
+        return [{'id': '1', 'title': 't', 'url': '', 'score': 0,
+                 'permalink': '/p', 'domain': '', 'link_flair_text': '', 'author': 'a'}]
