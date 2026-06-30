@@ -274,32 +274,34 @@ The bot fetches posts/comments through an ordered chain of sources, trying each 
 
 | Source | Auth | Notes |
 |--------|------|-------|
-| `oauth` | Reddit app | Authenticated API (full login **or** read-only app-only). Unblocked, 100 req/min, the only source that provides **score** and **domain**. |
-| `rss` | None | `www.reddit.com/r/<sub>/new/.rss`. Works without credentials but is per-IP rate-limited, so requests are throttled. No score/domain (see filter note above). |
-| `json` | None | `old.reddit.com/.../new.json`. Mostly blocked by Reddit now; kept as a last resort. |
+| `oauth` | Reddit app | Authenticated API (full login **or** read-only app-only). Unblocked, 100 req/min, full post data. |
+| `json` | None | `old.reddit.com/.../new.json`. Often blocked by Reddit now, but when it works it returns **full post data (score, domain, flair)** — so it's preferred over RSS. |
+| `rss` | None | `www.reddit.com/r/<sub>/new/.rss`. Works without credentials but is per-IP rate-limited (throttled) and has **no score/domain** (see filter note above). |
 
-The active source is shown in the web UI; when OAuth is configured but the bot has fallen back, a banner indicates the degradation.
+Duplicate/concurrent requests for the same subreddit (or thread) are **coalesced** into a single fetch, and a failed source is cooled down with **exponential backoff** so a blocked endpoint isn't retried hot. The active source is shown in the web UI; when OAuth is configured but the bot has fallen back, a banner indicates the degradation.
 
 ### Configuring the order
 
-Default is `oauth → rss → json`. Override per deployment via `search.json`:
+Default is `oauth → json → rss` (JSON before RSS because it returns richer data when available). Override per deployment via `search.json`:
 
 ```json
 {
-    "source_order": ["oauth", "rss", "json"],
+    "source_order": ["oauth", "json", "rss"],
     "subreddits_to_search": [ ... ]
 }
 ```
 
-…or with the `REDDIT_SOURCE_ORDER=oauth,rss,json` environment variable (`search.json` takes precedence).
+…or with the `REDDIT_SOURCE_ORDER=oauth,json,rss` environment variable (`search.json` takes precedence).
 
 ### Environment variables
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `REDDIT_SOURCE_ORDER` | `oauth,rss,json` | Source chain order (overridden by `search.json`) |
+| `REDDIT_SOURCE_ORDER` | `oauth,json,rss` | Source chain order (overridden by `search.json`) |
 | `RSS_MIN_INTERVAL_SECONDS` | `4` | Minimum gap between RSS requests (rate-limit safety) |
-| `SOURCE_COOLDOWN_SECONDS` | `300` | How long to skip a source after it errors/gets blocked |
+| `SOURCE_COOLDOWN_SECONDS` | `300` | Base cooldown after a source errors/gets blocked |
+| `SOURCE_COOLDOWN_MAX_SECONDS` | `3600` | Cap on the exponential backoff cooldown |
+| `FETCH_CACHE_TTL_SECONDS` | `90` | How long a fetched result is shared across duplicate monitors |
 | `RSS_USER_AGENT` | (browser UA) | Override the User-Agent used for RSS requests |
 | `KUMA_PUSH_URL` | — | Uptime Kuma Push URL for the primary health heartbeat |
 | `KUMA_FETCH_STALE_SECONDS` | `1500` | Seconds without a successful fetch before reporting DOWN |

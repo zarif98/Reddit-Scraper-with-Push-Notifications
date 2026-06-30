@@ -34,13 +34,23 @@ _active_source = None
 _auth_error_notified = False
 
 _source_cooldown_until = {}      # source name -> epoch time until which it is skipped
+_source_failures = {}            # source name -> consecutive failure count (for backoff)
 _source_state_lock = threading.Lock()
-SOURCE_COOLDOWN_SECONDS = int(os.getenv('SOURCE_COOLDOWN_SECONDS', '300'))  # skip a blocked source for 5 min
+SOURCE_COOLDOWN_SECONDS = int(os.getenv('SOURCE_COOLDOWN_SECONDS', '300'))      # base cooldown
+SOURCE_COOLDOWN_MAX = int(os.getenv('SOURCE_COOLDOWN_MAX_SECONDS', '3600'))     # cap on backoff
 
 # RSS is aggressively per-IP rate-limited, so serialize requests with a minimum gap.
 _rss_throttle_lock = threading.Lock()
 _rss_last_request = [0.0]
 RSS_MIN_INTERVAL = float(os.getenv('RSS_MIN_INTERVAL_SECONDS', '4'))
+
+# Short-lived response cache so concurrent monitors covering the same subreddit/thread
+# share a single network request instead of each issuing its own (which both wastes
+# requests and trips rate limits). TTL only needs to span one scheduling burst.
+FETCH_CACHE_TTL = float(os.getenv('FETCH_CACHE_TTL_SECONDS', '90'))
+_fetch_cache = {}                # key -> (timestamp, value)
+_fetch_cache_lock = threading.Lock()
+_fetch_key_locks = {}            # key -> Lock (so concurrent callers coalesce, not stampede)
 
 
 def record_fetch_success():
@@ -76,10 +86,47 @@ def _source_available(name):
 
 
 def _mark_source_down(name, seconds=None):
-    cooldown = seconds or SOURCE_COOLDOWN_SECONDS
+    """Cool down a failed source. With no explicit duration, back off exponentially on
+    consecutive failures (base, 2x, 4x, ... capped) so a flagged IP / dead source gets
+    a real rest instead of being retried every cycle."""
     with _source_state_lock:
+        if seconds is None:
+            n = _source_failures.get(name, 0) + 1
+            _source_failures[name] = n
+            cooldown = min(SOURCE_COOLDOWN_SECONDS * (2 ** (n - 1)), SOURCE_COOLDOWN_MAX)
+        else:
+            cooldown = seconds
         _source_cooldown_until[name] = time.time() + cooldown
-    logging.warning(f"Pausing Reddit source '{name}' for {cooldown}s after failure")
+    logging.warning(f"Pausing Reddit source '{name}' for {int(cooldown)}s after failure")
+
+
+def _note_source_success(name):
+    """Reset a source's backoff after it succeeds."""
+    with _source_state_lock:
+        _source_failures[name] = 0
+
+
+def _coalesce(key, producer):
+    """Return a cached fresh value for key, or produce + cache it. Concurrent callers
+    for the same key wait on a per-key lock and share the single result."""
+    now = time.time()
+    with _fetch_cache_lock:
+        entry = _fetch_cache.get(key)
+        if entry and now - entry[0] < FETCH_CACHE_TTL:
+            return entry[1]
+        key_lock = _fetch_key_locks.setdefault(key, threading.Lock())
+
+    with key_lock:
+        # Re-check inside the per-key lock: another thread may have just produced it.
+        now = time.time()
+        with _fetch_cache_lock:
+            entry = _fetch_cache.get(key)
+            if entry and now - entry[0] < FETCH_CACHE_TTL:
+                return entry[1]
+        value = producer()
+        with _fetch_cache_lock:
+            _fetch_cache[key] = (time.time(), value)
+        return value
 
 
 def _set_active_source(source):
@@ -254,6 +301,13 @@ def _fetch_posts_oauth(reddit, subreddit, limit):
 
 
 def fetch_posts(subreddit, limit, reddit):
+    """Fetch posts, coalescing concurrent/duplicate calls for the same subreddit+limit
+    so overlapping monitors share one request. See _fetch_posts_impl for the chain."""
+    return _coalesce(('posts', subreddit, limit),
+                     lambda: _fetch_posts_impl(subreddit, limit, reddit))
+
+
+def _fetch_posts_impl(subreddit, limit, reddit):
     """Try each configured source in order until one returns data.
 
     Returns (posts, source_name), or (None, None) if every source failed.
@@ -289,6 +343,7 @@ def fetch_posts(subreddit, limit, reddit):
 
         if source == 'oauth':
             _reset_auth_error_notification()
+        _note_source_success(source)
         record_fetch_success()
         _set_active_source(source)
         return posts, source
@@ -298,6 +353,13 @@ def fetch_posts(subreddit, limit, reddit):
 
 
 def fetch_thread_comments(subreddit, thread_id, reddit):
+    """Fetch a thread's comments, coalescing concurrent/duplicate calls for the same
+    thread so overlapping monitors share one request. See _fetch_thread_comments_impl."""
+    return _coalesce(('comments', subreddit, thread_id),
+                     lambda: _fetch_thread_comments_impl(subreddit, thread_id, reddit))
+
+
+def _fetch_thread_comments_impl(subreddit, thread_id, reddit):
     """Fetch a thread's comments through the configured source chain (oauth -> rss -> json)."""
     for source in config.get_source_order():
         if not _source_available(source):
@@ -333,6 +395,7 @@ def fetch_thread_comments(subreddit, thread_id, reddit):
             _mark_source_down(source)
             continue
 
+        _note_source_success(source)
         record_fetch_success()
         return comments
 

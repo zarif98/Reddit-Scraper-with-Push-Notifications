@@ -15,7 +15,7 @@ class TestSourceOrder:
 
     def test_default_when_unset(self):
         config.set_source_order(None)
-        assert config.get_source_order() == ['oauth', 'rss', 'json']
+        assert config.get_source_order() == ['oauth', 'json', 'rss']
 
     def test_drops_invalid_names_and_keeps_order(self):
         config.set_source_order(['json', 'bogus', 'rss', 'oauth'])
@@ -23,7 +23,7 @@ class TestSourceOrder:
 
     def test_empty_after_cleaning_falls_back_to_default(self):
         config.set_source_order(['nonsense', ''])
-        assert config.get_source_order() == ['oauth', 'rss', 'json']
+        assert config.get_source_order() == ['oauth', 'json', 'rss']
 
     def test_returns_a_copy(self):
         config.set_source_order(['rss'])
@@ -47,4 +47,4 @@ class TestApplySourceOrderFromConfig:
     def test_falls_back_to_default_when_neither_set(self, monkeypatch):
         monkeypatch.delenv('REDDIT_SOURCE_ORDER', raising=False)
         config.apply_source_order_from_config({})
-        assert config.get_source_order() == ['oauth', 'rss', 'json']
+        assert config.get_source_order() == ['oauth', 'json', 'rss']
