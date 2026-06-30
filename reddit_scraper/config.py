@@ -17,11 +17,14 @@ OPTIONAL_LIST_FIELDS = ['exclude_keywords', 'domain_contains', 'domain_excludes'
                         'flair_contains', 'author_includes', 'author_excludes']
 
 # Data-source pathways, tried in order by the dispatcher:
-#   'oauth' - authenticated PRAW API (full login OR app-only read-only).
-#   'rss'   - www.reddit.com Atom feed (no creds, rate-limited).
-#   'json'  - anonymous old.reddit.com JSON (mostly blocked; last resort).
+#   'oauth' - authenticated PRAW API (full login OR app-only read-only). Richest + unblocked.
+#   'json'  - anonymous old.reddit.com JSON. Often blocked, but when it works it returns
+#             full post data (score, domain, flair) unlike RSS, so it's preferred over RSS.
+#   'rss'   - www.reddit.com Atom feed (no creds, rate-limited, no score/domain). Last resort.
+# Backoff (see sources._mark_source_down) keeps a blocked source from being retried hot,
+# so ordering a richer-but-flakier source first costs only an occasional cheap re-probe.
 VALID_SOURCES = ('oauth', 'rss', 'json')
-DEFAULT_SOURCE_ORDER = ['oauth', 'rss', 'json']
+DEFAULT_SOURCE_ORDER = ['oauth', 'json', 'rss']
 
 
 # --- Paths (call-time, env-aware) ---

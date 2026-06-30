@@ -1,5 +1,5 @@
 {
-    "source_order": ["oauth", "rss", "json"],
+    "source_order": ["oauth", "json", "rss"],
     "subreddits_to_search": [
         {
             "id": "example-1",

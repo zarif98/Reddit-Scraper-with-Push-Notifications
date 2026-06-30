@@ -7,14 +7,18 @@ from reddit_scraper import sources, config
 
 @pytest.fixture(autouse=True)
 def reset_source_state():
-    """Source state is module-global; reset it (and disable RSS throttling) per test."""
+    """Source state is module-global; reset it (and disable RSS throttling/caching) per test."""
     sources._source_cooldown_until.clear()
+    sources._source_failures.clear()
+    sources._fetch_cache.clear()
+    sources._fetch_key_locks.clear()
     sources._active_source = None
     sources._LAST_FETCH_SUCCESS_TS = None
     sources._auth_error_notified = False
     sources._rss_last_request[0] = 0.0
     sources.RSS_MIN_INTERVAL = 0
-    config.set_source_order(None)  # back to default oauth -> rss -> json
+    sources.FETCH_CACHE_TTL = 0  # disable caching by default; coalescing tests opt back in
+    config.set_source_order(None)  # back to default oauth -> json -> rss
     yield
 
 
@@ -93,50 +97,58 @@ class TestFetchThreadCommentsRss:
         assert c['body'] == 'WTS shirt size Small $20'      # HTML tags stripped
 
 
+def _post():
+    return [{'id': '1', 'title': 't', 'url': '', 'score': 0,
+             'permalink': '/p', 'domain': '', 'link_flair_text': '', 'author': 'a'}]
+
+
+def _raises(*a, **k):
+    raise RuntimeError("blocked")
+
+
 class TestFetchPostsDispatcher:
+    """Tests set source order explicitly so they don't depend on the production default."""
 
-    def _post(self):
-        return [{'id': '1', 'title': 't', 'url': '', 'score': 0,
-                 'permalink': '/p', 'domain': '', 'link_flair_text': '', 'author': 'a'}]
+    def test_skips_oauth_when_no_reddit_and_uses_next_source(self, monkeypatch):
+        config.set_source_order(['oauth', 'json', 'rss'])
+        monkeypatch.setattr(sources, 'fetch_posts_json', lambda sub, lim: _post())
+        monkeypatch.setattr(sources, 'fetch_posts_rss', lambda sub, lim: _post())
+        posts, source = sources.fetch_posts('gamedeals', 10, reddit=None)
+        assert source == 'json'          # oauth skipped (no reddit), json is next
+        assert sources._active_source == 'json'
 
-    def test_skips_oauth_when_no_reddit_and_uses_rss(self, monkeypatch):
-        monkeypatch.setattr(sources, 'fetch_posts_rss', lambda sub, lim: self._post())
+    def test_falls_through_on_failure_and_cools_down(self, monkeypatch):
+        config.set_source_order(['json', 'rss'])
+        monkeypatch.setattr(sources, 'fetch_posts_json', _raises)
+        monkeypatch.setattr(sources, 'fetch_posts_rss', lambda sub, lim: [])
         posts, source = sources.fetch_posts('gamedeals', 10, reddit=None)
         assert source == 'rss'
-        assert len(posts) == 1
-        assert sources._active_source == 'rss'
-
-    def test_falls_through_to_json_and_cools_down_failed_source(self, monkeypatch):
-        def boom(*a, **k):
-            raise RuntimeError("RSS blocked (429)")
-        monkeypatch.setattr(sources, 'fetch_posts_rss', boom)
-        monkeypatch.setattr(sources, 'fetch_posts_json', lambda sub, lim: [])
-        posts, source = sources.fetch_posts('gamedeals', 10, reddit=None)
-        assert source == 'json'
         assert posts == []
-        assert not sources._source_available('rss')        # rss is on cooldown
+        assert not sources._source_available('json')       # failed source on cooldown
 
     def test_returns_none_when_all_sources_fail(self, monkeypatch):
-        monkeypatch.setattr(sources, 'fetch_posts_rss', lambda sub, lim: (_ for _ in ()).throw(RuntimeError()))
-        monkeypatch.setattr(sources, 'fetch_posts_json', lambda sub, lim: None)
+        config.set_source_order(['json', 'rss'])
+        monkeypatch.setattr(sources, 'fetch_posts_json', _raises)
+        monkeypatch.setattr(sources, 'fetch_posts_rss', lambda sub, lim: None)
         posts, source = sources.fetch_posts('gamedeals', 10, reddit=None)
         assert posts is None and source is None
 
     def test_cooldown_source_is_skipped(self, monkeypatch):
-        sources._mark_source_down('rss', 300)
-        called = {'rss': False}
+        config.set_source_order(['json', 'rss'])
+        sources._mark_source_down('json', 300)
+        called = {'json': False}
 
-        def rss(sub, lim):
-            called['rss'] = True
-            return self._post()
-        monkeypatch.setattr(sources, 'fetch_posts_rss', rss)
-        monkeypatch.setattr(sources, 'fetch_posts_json', lambda sub, lim: self._post())
+        def json_fetch(sub, lim):
+            called['json'] = True
+            return _post()
+        monkeypatch.setattr(sources, 'fetch_posts_json', json_fetch)
+        monkeypatch.setattr(sources, 'fetch_posts_rss', lambda sub, lim: _post())
         posts, source = sources.fetch_posts('gamedeals', 10, reddit=None)
-        assert source == 'json'          # rss skipped due to cooldown
-        assert called['rss'] is False
+        assert source == 'rss'           # json skipped due to cooldown
+        assert called['json'] is False
 
     def test_oauth_success_sets_active_source_and_records_success(self, monkeypatch):
-        monkeypatch.setattr(sources, '_fetch_posts_oauth', lambda r, sub, lim: self._post())
+        monkeypatch.setattr(sources, '_fetch_posts_oauth', lambda r, sub, lim: _post())
         posts, source = sources.fetch_posts('gamedeals', 10, reddit=object())
         assert source == 'oauth'
         assert sources._active_source == 'oauth'
@@ -149,10 +161,11 @@ class TestAuthErrorNotificationGuard:
         """6 monitors hitting the same OAuth 401 in parallel must produce one alert."""
         from concurrent.futures import ThreadPoolExecutor
 
-        def oauth_401(reddit, sub, lim):
-            raise RuntimeError("received 401 HTTP response")
-        monkeypatch.setattr(sources, '_fetch_posts_oauth', oauth_401)
-        monkeypatch.setattr(sources, 'fetch_posts_rss', lambda sub, lim: self._post())
+        monkeypatch.setattr(sources, '_fetch_posts_oauth',
+                            lambda reddit, sub, lim: (_ for _ in ()).throw(RuntimeError("received 401 HTTP response")))
+        # next source serves so the chain completes (stub both to avoid the network)
+        monkeypatch.setattr(sources, 'fetch_posts_json', lambda sub, lim: _post())
+        monkeypatch.setattr(sources, 'fetch_posts_rss', lambda sub, lim: _post())
 
         calls = []
         monkeypatch.setattr(sources.notifications, 'notify_error', lambda msg: calls.append(msg))
@@ -162,6 +175,88 @@ class TestAuthErrorNotificationGuard:
 
         assert len(calls) == 1
 
-    def _post(self):
-        return [{'id': '1', 'title': 't', 'url': '', 'score': 0,
-                 'permalink': '/p', 'domain': '', 'link_flair_text': '', 'author': 'a'}]
+
+class TestCoalescing:
+
+    def test_duplicate_subreddit_shares_one_request(self, monkeypatch):
+        sources.FETCH_CACHE_TTL = 90
+        calls = {'n': 0}
+
+        def served(sub, lim):
+            calls['n'] += 1
+            return _post()
+        monkeypatch.setattr(sources, 'fetch_posts_json', served)
+
+        r1 = sources.fetch_posts('frugalmalefashion', 10, None)
+        r2 = sources.fetch_posts('frugalmalefashion', 10, None)
+        assert calls['n'] == 1          # second served from cache
+        assert r1 == r2
+
+    def test_concurrent_duplicates_coalesce_to_one(self, monkeypatch):
+        from concurrent.futures import ThreadPoolExecutor
+        import time
+        sources.FETCH_CACHE_TTL = 90
+        calls = {'n': 0}
+
+        def served(sub, lim):
+            calls['n'] += 1
+            time.sleep(0.05)            # widen the race window
+            return _post()
+        monkeypatch.setattr(sources, 'fetch_posts_json', served)
+
+        with ThreadPoolExecutor(max_workers=5) as ex:
+            list(ex.map(lambda i: sources.fetch_posts('frugalmalefashion', 10, None), range(5)))
+        assert calls['n'] == 1
+
+    def test_different_subreddits_not_shared(self, monkeypatch):
+        sources.FETCH_CACHE_TTL = 90
+        calls = {'n': 0}
+        monkeypatch.setattr(sources, 'fetch_posts_json',
+                            lambda sub, lim: (calls.__setitem__('n', calls['n'] + 1) or _post()))
+        sources.fetch_posts('gamedeals', 10, None)
+        sources.fetch_posts('apphookup', 10, None)
+        assert calls['n'] == 2
+
+    def test_whole_chain_is_coalesced(self, monkeypatch):
+        """Coalescing wraps the entire chain, so every source (incl. JSON) fires once per burst."""
+        sources.FETCH_CACHE_TTL = 90
+        config.set_source_order(['json', 'rss'])
+        json_calls = {'n': 0}
+        rss_calls = {'n': 0}
+        monkeypatch.setattr(sources, 'fetch_posts_json',
+                            lambda sub, lim: (json_calls.__setitem__('n', json_calls['n'] + 1) or _raises()))
+        monkeypatch.setattr(sources, 'fetch_posts_rss',
+                            lambda sub, lim: (rss_calls.__setitem__('n', rss_calls['n'] + 1) or _post()))
+        sources.fetch_posts('gamedeals', 10, None)
+        sources.fetch_posts('gamedeals', 10, None)
+        assert json_calls['n'] == 1 and rss_calls['n'] == 1   # whole chain ran once, then cached
+
+
+class TestBackoff:
+
+    def test_exponential_backoff_on_consecutive_failures(self):
+        import time
+        sources._mark_source_down('rss')                       # 1st: base (300s)
+        first = sources._source_cooldown_until['rss'] - time.time()
+        sources._mark_source_down('rss')                       # 2nd: 2x (600s)
+        second = sources._source_cooldown_until['rss'] - time.time()
+        assert 290 < first <= sources.SOURCE_COOLDOWN_SECONDS
+        assert second > first * 1.5                            # roughly doubled
+
+    def test_success_resets_backoff(self):
+        sources._mark_source_down('rss')
+        sources._mark_source_down('rss')
+        assert sources._source_failures['rss'] == 2
+        sources._note_source_success('rss')
+        assert sources._source_failures['rss'] == 0
+
+    def test_backoff_capped(self, monkeypatch):
+        monkeypatch.setattr(sources, 'SOURCE_COOLDOWN_MAX', 1000)
+        import time
+        for _ in range(10):
+            sources._mark_source_down('rss')
+        assert sources._source_cooldown_until['rss'] - time.time() <= 1000
+
+    def test_explicit_seconds_does_not_increment_failures(self):
+        sources._mark_source_down('rss', 50)
+        assert sources._source_failures.get('rss', 0) == 0
