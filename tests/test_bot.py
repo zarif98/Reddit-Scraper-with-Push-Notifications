@@ -1,19 +1,9 @@
 """Unit tests for bot.py functionality.
 
-Note: Many tests are skipped because bot.py has module-level code that blocks
-during import (wait_for_credentials). These tests work in Docker where 
-credentials exist, or can be run manually after creating test credentials.
+bot.py no longer does blocking/auth work at import time (the data-source helpers
+live in the reddit_scraper package and are re-exported by bot), so these run normally.
 """
-import pytest
 import responses
-
-
-# Skip all tests in this module when bot can't be imported
-# This happens when credentials don't exist or other environment issues
-pytestmark = pytest.mark.skipif(
-    True,  # TODO: Set to False once bot.py is refactored to not block on import
-    reason="bot.py blocks on import due to wait_for_credentials()"
-)
 
 
 class TestFetchPostsJson:

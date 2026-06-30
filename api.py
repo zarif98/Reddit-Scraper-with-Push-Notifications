@@ -12,98 +12,29 @@ import requests
 from datetime import datetime
 import apprise
 
+from reddit_scraper import config as rs_config, credentials as rs_credentials
+
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
-# Configuration
-DATA_DIR = os.environ.get('DATA_DIR', os.path.dirname(os.path.abspath(__file__)))
-CONFIG_FILE_PATH = os.path.join(DATA_DIR, 'search.json')
-BOT_STATUS_FILE_PATH = os.path.join(DATA_DIR, 'bot_status.json')
+# Configuration (paths + shared helpers come from the reddit_scraper package)
+DATA_DIR = rs_config.get_data_dir()
+CONFIG_FILE_PATH = rs_config.get_config_path()
+BOT_STATUS_FILE_PATH = rs_config.get_bot_status_path()
 
-# Default color palette (matching Pager app)
-DEFAULT_COLORS = [
-    '#8B5CF6',  # Purple
-    '#3B82F6',  # Blue
-    '#22C55E',  # Green
-    '#EF4444',  # Red
-    '#F97316',  # Orange
-    '#EC4899',  # Pink
-    '#06B6D4',  # Cyan
-    '#EAB308',  # Yellow
-]
+DEFAULT_COLORS = rs_config.DEFAULT_COLORS
+OPTIONAL_LIST_FIELDS = rs_config.OPTIONAL_LIST_FIELDS
+clean_monitor = rs_config.clean_monitor
 
 
 def load_config():
-    """Load configuration from search.json file."""
-    try:
-        with open(CONFIG_FILE_PATH, 'r') as f:
-            config = json.load(f)
-        
-        # Ensure all monitors have IDs and new fields
-        monitors = config.get('subreddits_to_search', [])
-        updated = False
-        
-        for i, monitor in enumerate(monitors):
-            if 'id' not in monitor:
-                monitor['id'] = str(uuid.uuid4())
-                updated = True
-            if 'name' not in monitor:
-                # Generate name from subreddit
-                monitor['name'] = f"r/{monitor.get('subreddit', 'unknown')}"
-                updated = True
-            if 'color' not in monitor:
-                monitor['color'] = DEFAULT_COLORS[i % len(DEFAULT_COLORS)]
-                updated = True
-            if 'enabled' not in monitor:
-                monitor['enabled'] = True
-                updated = True
-            if 'exclude_keywords' not in monitor:
-                monitor['exclude_keywords'] = []
-                updated = True
-            if 'cooldown_minutes' not in monitor:
-                monitor['cooldown_minutes'] = 10
-                updated = True
-            if 'max_post_age_hours' not in monitor:
-                monitor['max_post_age_hours'] = 12
-                updated = True
-            # New filter fields
-            if 'domain_contains' not in monitor:
-                monitor['domain_contains'] = []
-                updated = True
-            if 'domain_excludes' not in monitor:
-                monitor['domain_excludes'] = []
-                updated = True
-            if 'flair_contains' not in monitor:
-                monitor['flair_contains'] = []
-                updated = True
-            if 'author_includes' not in monitor:
-                monitor['author_includes'] = []
-                updated = True
-            if 'author_excludes' not in monitor:
-                monitor['author_excludes'] = []
-                updated = True
-        
-        # Save if we added any fields
-        if updated:
-            config['subreddits_to_search'] = monitors
-            save_config(config)
-        
-        return config
-    except FileNotFoundError:
-        # Create default config
-        default_config = {
-            'subreddits_to_search': []
-        }
-        save_config(default_config)
-        return default_config
-    except json.JSONDecodeError as e:
-        raise Exception(f"Invalid JSON in config file: {e}")
+    """Load configuration from search.json (normalizing ids/fields). Delegates to shared package."""
+    return rs_config.load_managed_config()
 
 
 def save_config(config):
     """Save configuration to search.json file."""
-    with open(CONFIG_FILE_PATH, 'w') as f:
-        json.dump(config, f, indent=4)
+    rs_config.save_config(config)
 
 
 @app.route('/api/health', methods=['GET'])
@@ -116,27 +47,49 @@ def health_check():
     })
 
 
+def get_source_capability():
+    """Report which data-source pathways are configured and whether the OAuth API
+    (required for score/domain filters) is available. Used by the UI to hide filters
+    that the active pathways can't provide."""
+    valid = ('oauth', 'rss', 'json')
+    try:
+        config = load_config() or {}
+    except Exception:
+        config = {}
+    order = [s for s in (config.get('source_order') or ['oauth', 'rss', 'json']) if s in valid]
+    if not order:
+        order = ['oauth', 'rss', 'json']
+
+    creds = load_credentials()
+    client_id = creds.get('reddit_client_id') or os.getenv('REDDIT_CLIENT_ID')
+    client_secret = creds.get('reddit_client_secret') or os.getenv('REDDIT_CLIENT_SECRET')
+    oauth_available = bool(client_id and client_secret) and 'oauth' in order
+
+    return {
+        'source_order': order,
+        'oauth_available': oauth_available,
+        # score and domain are only available through the authenticated API
+        'rich_filters_supported': oauth_available,
+    }
+
+
 @app.route('/api/status', methods=['GET'])
 def bot_status():
-    """Get bot status including fallback mode warning."""
+    """Get bot status including fallback mode warning and source capability."""
+    status = {'using_json_fallback': False, 'message': None, 'updated_at': None}
     try:
         if os.path.exists(BOT_STATUS_FILE_PATH):
             with open(BOT_STATUS_FILE_PATH, 'r') as f:
                 status = json.load(f)
-            return jsonify(status)
-        else:
-            # No status file yet - bot hasn't reported
-            return jsonify({
-                'using_json_fallback': False,
-                'message': None,
-                'updated_at': None
-            })
     except Exception as e:
-        return jsonify({
-            'using_json_fallback': False,
-            'message': None,
-            'error': str(e)
-        })
+        status['error'] = str(e)
+
+    try:
+        status.update(get_source_capability())
+    except Exception as e:
+        status.setdefault('error', str(e))
+
+    return jsonify(status)
 
 
 @app.route('/api/subreddits/search', methods=['GET'])
@@ -254,10 +207,11 @@ def create_monitor():
             'author_excludes': data.get('author_excludes', [])
         }
         
+        clean_monitor(new_monitor)
         monitors.append(new_monitor)
         config['subreddits_to_search'] = monitors
         save_config(config)
-        
+
         return jsonify(new_monitor), 201
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -324,9 +278,10 @@ def update_monitor(monitor_id):
                 if 'author_excludes' in data:
                     monitors[i]['author_excludes'] = data['author_excludes']
                 
+                clean_monitor(monitors[i])
                 config['subreddits_to_search'] = monitors
                 save_config(config)
-                
+
                 return jsonify(monitors[i])
         
         return jsonify({'error': 'Monitor not found'}), 404
@@ -354,24 +309,17 @@ def delete_monitor(monitor_id):
 
 
 # Credentials file path
-CREDENTIALS_FILE_PATH = os.path.join(DATA_DIR, 'credentials.json')
+CREDENTIALS_FILE_PATH = rs_config.get_credentials_path()
 
 
 def load_credentials():
-    """Load credentials from credentials.json file."""
-    try:
-        with open(CREDENTIALS_FILE_PATH, 'r') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return {}
-    except json.JSONDecodeError:
-        return {}
+    """Load credentials from credentials.json file. Delegates to shared package."""
+    return rs_credentials.read_credentials_file()
 
 
 def save_credentials(credentials):
     """Save credentials to credentials.json file."""
-    with open(CREDENTIALS_FILE_PATH, 'w') as f:
-        json.dump(credentials, f, indent=4)
+    rs_credentials.save_credentials_file(credentials)
 
 
 def is_configured():
