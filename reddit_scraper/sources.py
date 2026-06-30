@@ -49,6 +49,27 @@ def record_fetch_success():
     _LAST_FETCH_SUCCESS_TS = time.time()
 
 
+def _claim_auth_error_notification():
+    """Atomically claim the right to send the one-time OAuth-failure notification.
+
+    Monitors run concurrently, so without this guard every thread that hits the same
+    401 fires its own notification. Returns True for exactly one caller until reset
+    on the next oauth success.
+    """
+    global _auth_error_notified
+    with _source_state_lock:
+        if _auth_error_notified:
+            return False
+        _auth_error_notified = True
+        return True
+
+
+def _reset_auth_error_notification():
+    global _auth_error_notified
+    with _source_state_lock:
+        _auth_error_notified = False
+
+
 def _source_available(name):
     with _source_state_lock:
         return time.time() >= _source_cooldown_until.get(name, 0)
@@ -237,7 +258,6 @@ def fetch_posts(subreddit, limit, reddit):
 
     Returns (posts, source_name), or (None, None) if every source failed.
     """
-    global _auth_error_notified
     for source in config.get_source_order():
         if not _source_available(source):
             continue
@@ -255,10 +275,9 @@ def fetch_posts(subreddit, limit, reddit):
         except Exception as e:
             error_str = str(e)
             if source == 'oauth' and ('401' in error_str or 'unauthorized' in error_str.lower()):
-                if not _auth_error_notified:
+                if _claim_auth_error_notification():
                     notifications.notify_error(
                         "Reddit API authentication failed (401). Falling back to alternative sources (RSS/JSON).")
-                    _auth_error_notified = True
             logging.warning(f"Reddit source '{source}' failed for r/{subreddit}: {e}")
             _mark_source_down(source)
             continue
@@ -269,7 +288,7 @@ def fetch_posts(subreddit, limit, reddit):
             continue
 
         if source == 'oauth':
-            _auth_error_notified = False
+            _reset_auth_error_notification()
         record_fetch_success()
         _set_active_source(source)
         return posts, source
