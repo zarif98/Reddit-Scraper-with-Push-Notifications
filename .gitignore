@@ -4,3 +4,9 @@
 search.json
 credentials.json
 data/
+
+# Python / OS
+__pycache__/
+*.py[cod]
+.DS_Store
+.pytest_cache/

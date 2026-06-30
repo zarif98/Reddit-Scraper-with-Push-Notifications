@@ -12,93 +12,29 @@ import requests
 from datetime import datetime
 import apprise
 
+from reddit_scraper import config as rs_config, credentials as rs_credentials
+
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
-# Configuration
-DATA_DIR = os.environ.get('DATA_DIR', os.path.dirname(os.path.abspath(__file__)))
-CONFIG_FILE_PATH = os.path.join(DATA_DIR, 'search.json')
-BOT_STATUS_FILE_PATH = os.path.join(DATA_DIR, 'bot_status.json')
+# Configuration (paths + shared helpers come from the reddit_scraper package)
+DATA_DIR = rs_config.get_data_dir()
+CONFIG_FILE_PATH = rs_config.get_config_path()
+BOT_STATUS_FILE_PATH = rs_config.get_bot_status_path()
 
-# Default color palette (matching Pager app)
-DEFAULT_COLORS = [
-    '#8B5CF6',  # Purple
-    '#3B82F6',  # Blue
-    '#22C55E',  # Green
-    '#EF4444',  # Red
-    '#F97316',  # Orange
-    '#EC4899',  # Pink
-    '#06B6D4',  # Cyan
-    '#EAB308',  # Yellow
-]
-
-
-OPTIONAL_LIST_FIELDS = ['exclude_keywords', 'domain_contains', 'domain_excludes',
-                        'flair_contains', 'author_includes', 'author_excludes']
-
-
-def clean_monitor(monitor):
-    """Strip optional fields that are empty or null to keep search.json tidy."""
-    for field in OPTIONAL_LIST_FIELDS:
-        if field in monitor and not monitor[field]:
-            del monitor[field]
-    if 'min_upvotes' in monitor and monitor['min_upvotes'] is None:
-        del monitor['min_upvotes']
-    return monitor
+DEFAULT_COLORS = rs_config.DEFAULT_COLORS
+OPTIONAL_LIST_FIELDS = rs_config.OPTIONAL_LIST_FIELDS
+clean_monitor = rs_config.clean_monitor
 
 
 def load_config():
-    """Load configuration from search.json file."""
-    try:
-        with open(CONFIG_FILE_PATH, 'r') as f:
-            config = json.load(f)
-        
-        # Ensure all monitors have IDs and new fields
-        monitors = config.get('subreddits_to_search', [])
-        updated = False
-        
-        for i, monitor in enumerate(monitors):
-            if 'id' not in monitor:
-                monitor['id'] = str(uuid.uuid4())
-                updated = True
-            if 'name' not in monitor:
-                # Generate name from subreddit
-                monitor['name'] = f"r/{monitor.get('subreddit', 'unknown')}"
-                updated = True
-            if 'color' not in monitor:
-                monitor['color'] = DEFAULT_COLORS[i % len(DEFAULT_COLORS)]
-                updated = True
-            if 'enabled' not in monitor:
-                monitor['enabled'] = True
-                updated = True
-            if 'cooldown_minutes' not in monitor:
-                monitor['cooldown_minutes'] = 10
-                updated = True
-            if 'max_post_age_hours' not in monitor:
-                monitor['max_post_age_hours'] = 12
-                updated = True
-        
-        # Save if we added any fields
-        if updated:
-            config['subreddits_to_search'] = monitors
-            save_config(config)
-        
-        return config
-    except FileNotFoundError:
-        # Create default config
-        default_config = {
-            'subreddits_to_search': []
-        }
-        save_config(default_config)
-        return default_config
-    except json.JSONDecodeError as e:
-        raise Exception(f"Invalid JSON in config file: {e}")
+    """Load configuration from search.json (normalizing ids/fields). Delegates to shared package."""
+    return rs_config.load_managed_config()
 
 
 def save_config(config):
     """Save configuration to search.json file."""
-    with open(CONFIG_FILE_PATH, 'w') as f:
-        json.dump(config, f, indent=4)
+    rs_config.save_config(config)
 
 
 @app.route('/api/health', methods=['GET'])
@@ -373,24 +309,17 @@ def delete_monitor(monitor_id):
 
 
 # Credentials file path
-CREDENTIALS_FILE_PATH = os.path.join(DATA_DIR, 'credentials.json')
+CREDENTIALS_FILE_PATH = rs_config.get_credentials_path()
 
 
 def load_credentials():
-    """Load credentials from credentials.json file."""
-    try:
-        with open(CREDENTIALS_FILE_PATH, 'r') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        return {}
-    except json.JSONDecodeError:
-        return {}
+    """Load credentials from credentials.json file. Delegates to shared package."""
+    return rs_credentials.read_credentials_file()
 
 
 def save_credentials(credentials):
     """Save credentials to credentials.json file."""
-    with open(CREDENTIALS_FILE_PATH, 'w') as f:
-        json.dump(credentials, f, indent=4)
+    rs_credentials.save_credentials_file(credentials)
 
 
 def is_configured():
