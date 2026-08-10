@@ -340,6 +340,7 @@ def get_credentials_status():
         'has_notifications': len(notification_urls) > 0,
         'notification_count': len(notification_urls),
         'has_reddit_username': bool(creds.get('reddit_username')),
+        'has_sylvia': bool(creds.get('sylvia_api_key')),
     })
 
 
@@ -365,6 +366,7 @@ def get_credentials():
         'reddit_username': creds.get('reddit_username', ''),
         'reddit_password': mask_value(creds.get('reddit_password', '')),
         'reddit_user_agent': creds.get('reddit_user_agent', ''),
+        'sylvia_api_key': mask_value(creds.get('sylvia_api_key', '')),
         'notification_urls': notification_urls,  # Return full URLs for editing
         'notification_urls_masked': masked_urls,  # Masked for display
     })
@@ -441,8 +443,8 @@ def update_credentials():
         creds = load_credentials()
         
         # Only update fields that are provided and not masked
-        fields = ['reddit_client_id', 'reddit_client_secret', 'reddit_username', 
-                  'reddit_password', 'reddit_user_agent']
+        fields = ['reddit_client_id', 'reddit_client_secret', 'reddit_username',
+                  'reddit_password', 'reddit_user_agent', 'sylvia_api_key']
         
         for field in fields:
             if field in data:
