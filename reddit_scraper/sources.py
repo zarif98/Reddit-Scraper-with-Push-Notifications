@@ -44,6 +44,35 @@ _rss_throttle_lock = threading.Lock()
 _rss_last_request = [0.0]
 RSS_MIN_INTERVAL = float(os.getenv('RSS_MIN_INTERVAL_SECONDS', '4'))
 
+# Optional proxying so the anonymous RSS/JSON endpoints aren't all hit from one IP
+# (the IP Reddit ends up flagging). REDDIT_PROXIES is a comma-separated pool rotated
+# per request; REDDIT_PROXY is a single proxy. Unset -> requests go out directly, so
+# this is a no-op until a proxy URL is provided. Supports http(s):// and socks5://
+# (socks needs `requests[socks]`). When any proxy is configured we NEVER fall back to a
+# direct request, so a configured IP-hiding setup can't silently leak the real IP.
+def _parse_proxies():
+    pool = os.getenv('REDDIT_PROXIES')
+    if pool:
+        return [p.strip() for p in pool.split(',') if p.strip()]
+    single = (os.getenv('REDDIT_PROXY') or '').strip()
+    return [single] if single else []
+
+_PROXIES = _parse_proxies()
+_proxy_index = [0]
+_proxy_cooldown_until = {}        # proxy url -> epoch time until which it is skipped
+_proxy_lock = threading.Lock()
+PROXY_COOLDOWN_SECONDS = int(os.getenv('PROXY_COOLDOWN_SECONDS', '120'))
+
+# Sylvia (api.sylvia-api.com) is a third-party Reddit gateway that returns native-Reddit-
+# shaped JSON from Sylvia's own IP (so it doubles as IP hiding) and, unlike RSS, carries
+# full post data (score/domain/flair). It's authenticated with an API key and is billed
+# per successful request, so it's OPT-IN: the 'sylvia' source is skipped entirely unless
+# SYLVIA_API_KEY is set, and it's not in the default source order.
+SYLVIA_API_KEY = os.getenv('SYLVIA_API_KEY')
+SYLVIA_BASE_URL = os.getenv('SYLVIA_BASE_URL', 'https://api.sylvia-api.com/v1/reddit').rstrip('/')
+SYLVIA_TIMEOUT = float(os.getenv('SYLVIA_TIMEOUT_SECONDS', '15'))
+_sylvia_key_warned = False       # so the "no key" skip is logged only once
+
 # Short-lived response cache so concurrent monitors covering the same subreddit/thread
 # share a single network request instead of each issuing its own (which both wastes
 # requests and trips rate limits). TTL only needs to span one scheduling burst.
@@ -81,6 +110,13 @@ def _reset_auth_error_notification():
 
 
 def _source_available(name):
+    if name == 'sylvia' and not SYLVIA_API_KEY:
+        global _sylvia_key_warned
+        with _source_state_lock:
+            if not _sylvia_key_warned:
+                logging.warning("Source 'sylvia' is in the order but SYLVIA_API_KEY is unset; skipping it.")
+                _sylvia_key_warned = True
+        return False
     with _source_state_lock:
         return time.time() >= _source_cooldown_until.get(name, 0)
 
@@ -147,11 +183,66 @@ def _rss_throttle():
         _rss_last_request[0] = time.time()
 
 
+def _redact_proxy(proxy):
+    """Hide any user:pass credentials in a proxy URL before it goes to a log."""
+    return re.sub(r'//[^@/]+@', '//***@', proxy)
+
+
+def _next_proxy():
+    """Round-robin the next proxy that isn't cooling down, or None if all are (or none set)."""
+    if not _PROXIES:
+        return None
+    now = time.time()
+    with _proxy_lock:
+        n = len(_PROXIES)
+        for _ in range(n):
+            i = _proxy_index[0] % n
+            _proxy_index[0] = (i + 1) % n
+            proxy = _PROXIES[i]
+            if _proxy_cooldown_until.get(proxy, 0) <= now:
+                return proxy
+        return None
+
+
+def _mark_proxy_down(proxy):
+    """Skip a proxy that failed to connect for a short while, then let it back in."""
+    with _proxy_lock:
+        _proxy_cooldown_until[proxy] = time.time() + PROXY_COOLDOWN_SECONDS
+
+
+def _http_get(url, headers, timeout=15):
+    """GET `url`, routed through a configured proxy when one is set.
+
+    With no proxy configured this is a plain requests.get. With a pool, requests are
+    rotated across proxies and a proxy that fails to *connect* is cooled down and the
+    next one tried. If proxies are configured but all are cooling down we raise rather
+    than fall back to a direct request, so IP hiding, once on, can't silently leak.
+    """
+    if not _PROXIES:
+        return requests.get(url, headers=headers, timeout=timeout)
+
+    last_err = None
+    for _ in range(len(_PROXIES)):
+        proxy = _next_proxy()
+        if proxy is None:
+            break
+        try:
+            return requests.get(url, headers=headers, timeout=timeout,
+                                 proxies={'http': proxy, 'https': proxy})
+        except (requests.exceptions.ProxyError,
+                requests.exceptions.ConnectTimeout,
+                requests.exceptions.ConnectionError) as e:
+            last_err = e
+            _mark_proxy_down(proxy)
+            logging.warning(f"Proxy {_redact_proxy(proxy)} failed to connect: {e}; trying next")
+    raise last_err or RuntimeError("All configured proxies are cooling down")
+
+
 def fetch_posts_json(subreddit, limit=10):
     """Fetch posts via the anonymous old.reddit.com JSON endpoint (mostly blocked now)."""
     url = f"https://old.reddit.com/r/{subreddit}/new.json?limit={limit}"
     try:
-        response = requests.get(url, headers={'User-Agent': JSON_USER_AGENT}, timeout=15)
+        response = _http_get(url, headers={'User-Agent': JSON_USER_AGENT})
         response.raise_for_status()
         data = response.json()
         posts = []
@@ -178,7 +269,7 @@ def fetch_thread_comments_json(subreddit, thread_id, limit=500):
     """Fetch top-level comments from a Reddit thread via the JSON endpoint, sorted by new."""
     url = f"https://old.reddit.com/r/{subreddit}/comments/{thread_id}.json?limit={limit}&sort=new"
     try:
-        response = requests.get(url, headers={'User-Agent': JSON_USER_AGENT}, timeout=15)
+        response = _http_get(url, headers={'User-Agent': JSON_USER_AGENT})
         response.raise_for_status()
         data = response.json()
 
@@ -204,13 +295,73 @@ def fetch_thread_comments_json(subreddit, thread_id, limit=500):
         return None
 
 
+def _sylvia_get(path):
+    """GET a Sylvia gateway path with the API key. Raises RuntimeError on auth (401/403)
+    and rate-limit (429) so the dispatcher cools the source down; raises for other HTTP
+    errors too. Returns the parsed JSON body."""
+    response = requests.get(f"{SYLVIA_BASE_URL}{path}",
+                            headers={'X-API-KEY': SYLVIA_API_KEY}, timeout=SYLVIA_TIMEOUT)
+    if response.status_code in (401, 403):
+        raise RuntimeError(f"Sylvia auth failed ({response.status_code}); check SYLVIA_API_KEY")
+    if response.status_code == 429:
+        raise RuntimeError("Sylvia rate limit hit (429)")
+    response.raise_for_status()
+    return response.json()
+
+
+def fetch_posts_sylvia(subreddit, limit=10):
+    """Fetch posts via the Sylvia Reddit gateway. Returns native-Reddit-shaped post data
+    (score/domain/flair all present), fetched from Sylvia's IP rather than ours. Paid per
+    request, so only reached when 'sylvia' is in the source order and SYLVIA_API_KEY is set."""
+    data = _sylvia_get(f"/r/{subreddit}/new?limit={limit}")
+    posts = []
+    for post_data in data.get('data', {}).get('posts', [])[:limit]:
+        posts.append({
+            'id': post_data.get('id', ''),
+            'title': post_data.get('title', ''),
+            'url': post_data.get('url', ''),
+            'score': post_data.get('score', 0),
+            'permalink': post_data.get('permalink', ''),
+            'domain': post_data.get('domain', ''),
+            'link_flair_text': post_data.get('link_flair_text') or '',
+            'author': post_data.get('author', ''),
+        })
+    record_fetch_success()
+    return posts
+
+
+def fetch_thread_comments_sylvia(subreddit, thread_id, limit=500):
+    """Fetch a thread's top-level comments via the Sylvia gateway. Its 'full_thread'
+    response mirrors Reddit's native [post_listing, comment_listing] pair, so we read the
+    t1 children of the second listing (same shape as fetch_thread_comments_json)."""
+    data = _sylvia_get(f"/submission/{thread_id}/full?sort=new")
+    thread = data.get('data', {}).get('thread', [])
+    if not isinstance(thread, list) or len(thread) < 2:
+        logging.error(f"Unexpected Sylvia thread structure for {thread_id}")
+        return None
+
+    comments = []
+    for child in thread[1].get('data', {}).get('children', []):
+        if child.get('kind') != 't1':
+            continue
+        d = child['data']
+        comments.append({
+            'id': d.get('id', ''),
+            'body': d.get('body', ''),
+            'author': d.get('author', ''),
+            'score': d.get('score', 0),
+            'permalink': d.get('permalink', ''),
+        })
+    return comments
+
+
 def fetch_posts_rss(subreddit, limit=10):
     """Fetch posts via the www.reddit.com Atom feed (no auth). Raises on 403/429 so the
     dispatcher can fall through and back off. Note: RSS exposes no score and no external
     domain, so those fields degrade to 0 / '' (score/domain filters won't match)."""
     _rss_throttle()
     url = f"https://www.reddit.com/r/{subreddit}/new/.rss?limit={limit}"
-    response = requests.get(url, headers={'User-Agent': RSS_USER_AGENT}, timeout=15)
+    response = _http_get(url, headers={'User-Agent': RSS_USER_AGENT})
     if response.status_code in (403, 429):
         raise RuntimeError(f"RSS blocked ({response.status_code})")
     response.raise_for_status()
@@ -251,7 +402,7 @@ def fetch_thread_comments_rss(subreddit, thread_id, limit=500):
     """Fetch a thread's comments via the www.reddit.com Atom feed (no auth)."""
     _rss_throttle()
     url = f"https://www.reddit.com/r/{subreddit}/comments/{thread_id}/.rss?sort=new&limit={limit}"
-    response = requests.get(url, headers={'User-Agent': RSS_USER_AGENT}, timeout=15)
+    response = _http_get(url, headers={'User-Agent': RSS_USER_AGENT})
     if response.status_code in (403, 429):
         raise RuntimeError(f"RSS blocked ({response.status_code})")
     response.raise_for_status()
@@ -324,6 +475,8 @@ def _fetch_posts_impl(subreddit, limit, reddit):
                 posts = fetch_posts_rss(subreddit, limit)
             elif source == 'json':
                 posts = fetch_posts_json(subreddit, limit)
+            elif source == 'sylvia':
+                posts = fetch_posts_sylvia(subreddit, limit)
             else:
                 continue
         except Exception as e:
@@ -384,6 +537,8 @@ def _fetch_thread_comments_impl(subreddit, thread_id, reddit):
                 comments = fetch_thread_comments_rss(subreddit, thread_id)
             elif source == 'json':
                 comments = fetch_thread_comments_json(subreddit, thread_id)
+            elif source == 'sylvia':
+                comments = fetch_thread_comments_sylvia(subreddit, thread_id)
             else:
                 continue
         except Exception as e:
