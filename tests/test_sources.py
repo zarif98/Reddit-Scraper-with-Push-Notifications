@@ -18,6 +18,11 @@ def reset_source_state():
     sources._rss_last_request[0] = 0.0
     sources.RSS_MIN_INTERVAL = 0
     sources.FETCH_CACHE_TTL = 0  # disable caching by default; coalescing tests opt back in
+    sources._PROXIES = []        # no proxy by default; proxy tests opt back in
+    sources._proxy_index[0] = 0
+    sources._proxy_cooldown_until.clear()
+    sources.SYLVIA_API_KEY = None   # sylvia disabled by default; its tests set a key
+    sources._sylvia_key_warned = False
     config.set_source_order(None)  # back to default oauth -> json -> rss
     yield
 
@@ -260,3 +265,168 @@ class TestBackoff:
     def test_explicit_seconds_does_not_increment_failures(self):
         sources._mark_source_down('rss', 50)
         assert sources._source_failures.get('rss', 0) == 0
+
+
+class TestProxying:
+
+    def _record_get(self, monkeypatch):
+        """Replace requests.get with a recorder returning a trivial 200 response."""
+        calls = []
+
+        class _Resp:
+            status_code = 200
+            content = POST_FEED
+            def raise_for_status(self): pass
+            def json(self): return {'data': {'children': []}}
+
+        def fake_get(url, headers=None, timeout=None, proxies=None):
+            calls.append(proxies)
+            return _Resp()
+
+        monkeypatch.setattr(sources.requests, 'get', fake_get)
+        return calls
+
+    def test_no_proxy_makes_direct_request(self, monkeypatch):
+        calls = self._record_get(monkeypatch)
+        sources.fetch_posts_rss('gamedeals')
+        assert calls == [None]                                  # proxies kwarg never passed
+
+    def test_single_proxy_is_used(self, monkeypatch):
+        calls = self._record_get(monkeypatch)
+        sources._PROXIES = ['http://proxy.local:8000']
+        sources.fetch_posts_rss('gamedeals')
+        assert calls == [{'http': 'http://proxy.local:8000',
+                          'https': 'http://proxy.local:8000'}]
+
+    def test_pool_rotates_across_requests(self, monkeypatch):
+        calls = self._record_get(monkeypatch)
+        sources._PROXIES = ['http://p1:8000', 'http://p2:8000']
+        sources.fetch_posts_rss('a')
+        sources.fetch_posts_rss('b')
+        sources.fetch_posts_rss('c')
+        used = [c['http'] for c in calls]
+        assert used == ['http://p1:8000', 'http://p2:8000', 'http://p1:8000']
+
+    def test_dead_proxy_is_skipped_and_next_tried(self, monkeypatch):
+        sources._PROXIES = ['http://dead:8000', 'http://good:8000']
+        attempts = []
+
+        class _Resp:
+            status_code = 200
+            content = POST_FEED
+            def raise_for_status(self): pass
+
+        def fake_get(url, headers=None, timeout=None, proxies=None):
+            attempts.append(proxies['http'])
+            if proxies['http'] == 'http://dead:8000':
+                raise sources.requests.exceptions.ProxyError("boom")
+            return _Resp()
+
+        monkeypatch.setattr(sources.requests, 'get', fake_get)
+        posts = sources.fetch_posts_rss('gamedeals')
+        assert attempts == ['http://dead:8000', 'http://good:8000']
+        assert 'http://dead:8000' in sources._proxy_cooldown_until   # cooled down
+        assert posts is not None
+
+    def test_all_proxies_down_raises_no_direct_leak(self, monkeypatch):
+        sources._PROXIES = ['http://p1:8000']
+
+        def fake_get(url, headers=None, timeout=None, proxies=None):
+            if proxies is None:
+                raise AssertionError("must never fall back to a direct request")
+            raise sources.requests.exceptions.ProxyError("down")
+
+        monkeypatch.setattr(sources.requests, 'get', fake_get)
+        with pytest.raises(sources.requests.exceptions.ProxyError):
+            sources.fetch_posts_rss('gamedeals')
+
+    def test_credentials_redacted_in_logs(self):
+        assert sources._redact_proxy('http://user:secret@host:8000') == 'http://***@host:8000'
+        assert sources._redact_proxy('socks5://127.0.0.1:9050') == 'socks5://127.0.0.1:9050'
+
+
+SYLVIA_POSTS = {
+    "success": True,
+    "data": {"after": "t3_zzz", "posts": [
+        {"id": "abc123", "title": "Red Dead Redemption 75% off",
+         "url": "https://store.example.com/x", "score": 42,
+         "permalink": "/r/gamedeals/comments/abc123/rdr/", "domain": "store.example.com",
+         "link_flair_text": None, "author": "dealhunter"},
+    ]},
+}
+
+SYLVIA_THREAD = {
+    "success": True,
+    "data": {"thread": [
+        {"data": {"children": [{"kind": "t3", "data": {"id": "abc123", "title": "the post"}}]}},
+        {"data": {"children": [
+            {"kind": "t1", "data": {"id": "def456", "body": "WTS shirt $20",
+                                    "author": "seller", "score": 3,
+                                    "permalink": "/r/x/comments/abc123/_/def456/"}},
+            {"kind": "more", "data": {"id": "ghi789"}},
+        ]}},
+    ]},
+}
+
+
+class TestSylvia:
+
+    BASE = 'https://api.sylvia-api.com/v1/reddit'
+
+    @responses.activate
+    def test_posts_parse_and_normalize(self):
+        sources.SYLVIA_API_KEY = 'syl_test'
+        responses.add(responses.GET, f'{self.BASE}/r/gamedeals/new', json=SYLVIA_POSTS, status=200)
+        posts = sources.fetch_posts_sylvia('gamedeals', limit=10)
+
+        assert len(posts) == 1
+        p = posts[0]
+        assert p['id'] == 'abc123'
+        assert p['score'] == 42                       # full data, unlike RSS
+        assert p['domain'] == 'store.example.com'
+        assert p['link_flair_text'] == ''             # None normalized to ''
+        # the key is sent in the X-API-KEY header
+        assert responses.calls[0].request.headers['X-API-KEY'] == 'syl_test'
+
+    @responses.activate
+    def test_comments_read_second_listing_t1_only(self):
+        sources.SYLVIA_API_KEY = 'syl_test'
+        responses.add(responses.GET, f'{self.BASE}/submission/abc123/full',
+                      json=SYLVIA_THREAD, status=200)
+        comments = sources.fetch_thread_comments_sylvia('x', 'abc123')
+
+        assert len(comments) == 1                     # 'more' child dropped, post listing ignored
+        assert comments[0]['id'] == 'def456'
+        assert comments[0]['author'] == 'seller'
+
+    @responses.activate
+    def test_auth_failure_raises_for_backoff(self):
+        sources.SYLVIA_API_KEY = 'syl_bad'
+        responses.add(responses.GET, f'{self.BASE}/r/gamedeals/new',
+                      json={"error": {"code": "FORBIDDEN"}}, status=403)
+        with pytest.raises(RuntimeError):
+            sources.fetch_posts_sylvia('gamedeals')
+
+    @responses.activate
+    def test_rate_limit_raises_for_backoff(self):
+        sources.SYLVIA_API_KEY = 'syl_test'
+        responses.add(responses.GET, f'{self.BASE}/r/gamedeals/new', status=429)
+        with pytest.raises(RuntimeError):
+            sources.fetch_posts_sylvia('gamedeals')
+
+    def test_source_skipped_when_no_key(self):
+        sources.SYLVIA_API_KEY = None
+        config.set_source_order(['sylvia'])           # only sylvia, but no key
+        posts, source = sources.fetch_posts('gamedeals', 10, reddit=None)
+        assert (posts, source) == (None, None)        # skipped, never requested
+
+    @responses.activate
+    def test_dispatcher_uses_sylvia_when_ordered_and_keyed(self, monkeypatch):
+        sources.SYLVIA_API_KEY = 'syl_test'
+        config.set_source_order(['sylvia', 'json'])
+        responses.add(responses.GET, f'{self.BASE}/r/gamedeals/new', json=SYLVIA_POSTS, status=200)
+        # json must not be reached if sylvia succeeds
+        monkeypatch.setattr(sources, 'fetch_posts_json',
+                            lambda *a, **k: pytest.fail("json should not be called"))
+        posts, source = sources.fetch_posts('gamedeals', 10, reddit=None)
+        assert source == 'sylvia' and posts[0]['id'] == 'abc123'

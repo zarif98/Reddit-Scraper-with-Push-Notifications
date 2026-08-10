@@ -61,6 +61,7 @@ def load_credentials():
         'reddit_user_agent': creds.get('reddit_user_agent') or os.getenv('REDDIT_USER_AGENT'),
         'reddit_username': creds.get('reddit_username') or os.getenv('REDDIT_USERNAME'),
         'reddit_password': creds.get('reddit_password') or os.getenv('REDDIT_PASSWORD'),
+        'sylvia_api_key': creds.get('sylvia_api_key') or os.getenv('SYLVIA_API_KEY'),
     }
 
 
@@ -115,6 +116,14 @@ def detect_auth_capability():
     global CREDENTIALS
     CREDENTIALS = load_credentials()
     check_credential_encoding(CREDENTIALS)
+
+    # Bridge the optional Sylvia gateway key into the sources layer (lazy import to avoid
+    # the sources -> notifications -> credentials import cycle). Env var still works on its
+    # own; this lets the key be set via the UI/credentials file too.
+    from . import sources
+    sources.SYLVIA_API_KEY = CREDENTIALS.get('sylvia_api_key')
+    if CREDENTIALS.get('sylvia_api_key'):
+        logging.info("🛰️  Sylvia gateway key configured (source 'sylvia' available if in the order).")
 
     has_app = bool(CREDENTIALS.get('reddit_client_id') and CREDENTIALS.get('reddit_client_secret'))
     has_login = has_app and bool(CREDENTIALS.get('reddit_username') and CREDENTIALS.get('reddit_password'))

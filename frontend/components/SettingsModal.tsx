@@ -14,6 +14,7 @@ interface Credentials {
     reddit_username: string;
     reddit_password: string;
     reddit_user_agent: string;
+    sylvia_api_key: string;
     notification_urls: string[];
 }
 
@@ -23,6 +24,7 @@ const DEFAULT_CREDENTIALS: Credentials = {
     reddit_username: '',
     reddit_password: '',
     reddit_user_agent: '',
+    sylvia_api_key: '',
     notification_urls: [],
 };
 
@@ -227,6 +229,27 @@ export default function SettingsModal({ onClose, onSave }: SettingsModalProps) {
                                                 className="input-field text-sm"
                                             />
                                         </div>
+                                    </div>
+                                </div>
+
+                                {/* Sylvia Gateway Section */}
+                                <div>
+                                    <h3 className="text-sm font-semibold text-white/80 mb-3 flex items-center gap-2">
+                                        🛰️ Sylvia Gateway <span className="text-xs text-white/40 font-normal">(optional fallback)</span>
+                                    </h3>
+                                    <div>
+                                        <label className="text-xs text-white/60 block mb-1">API Key</label>
+                                        <input
+                                            type="password"
+                                            value={credentials.sylvia_api_key}
+                                            onChange={(e) => handleChange('sylvia_api_key', e.target.value)}
+                                            placeholder="syl_..."
+                                            className="input-field text-sm"
+                                        />
+                                        <p className="text-xs text-white/40 mt-1">
+                                            Third-party Reddit gateway used as a fallback when the API is unavailable.
+                                            Add <code className="text-white/60">sylvia</code> to your source order to enable it.
+                                        </p>
                                     </div>
                                 </div>
 
