@@ -19,6 +19,9 @@ export default function Home() {
   const [isConfigured, setIsConfigured] = useState<boolean | null>(null);
   const [fallbackWarning, setFallbackWarning] = useState<string | null>(null);
   const [activeSource, setActiveSource] = useState<string | null>(null);
+  // Whether the *currently active* source is a degradation (no score/domain). Comes from the
+  // backend (config.RICH_SOURCES), so the UI never hardcodes which sources are "rich".
+  const [activeSourceDegraded, setActiveSourceDegraded] = useState(false);
   const [richFiltersSupported, setRichFiltersSupported] = useState(true);
 
   const checkCredentials = async () => {
@@ -38,11 +41,9 @@ export default function Home() {
       const data = await response.json();
       setActiveSource(data.active_source ?? null);
       setRichFiltersSupported(data.rich_filters_supported !== false);
-      if (data.using_json_fallback && data.message) {
-        setFallbackWarning(data.message);
-      } else {
-        setFallbackWarning(null);
-      }
+      const degraded = !!data.using_json_fallback;
+      setActiveSourceDegraded(degraded);
+      setFallbackWarning(degraded && data.message ? data.message : null);
     } catch (err) {
       // Ignore status check errors
     }
@@ -197,11 +198,9 @@ export default function Home() {
             <div className="text-sm">
               <p className="font-semibold text-amber-200">API Fallback Mode Active</p>
               <p className="text-amber-100/80 mt-1">{fallbackWarning}</p>
-              {(activeSource === 'rss' || activeSource === 'json') && (
-                <p className="text-amber-100/60 mt-1">
-                  Score and domain filters are unavailable on this source and won&apos;t be applied.
-                </p>
-              )}
+              <p className="text-amber-100/60 mt-1">
+                Score and domain filters are unavailable on this source and won&apos;t be applied.
+              </p>
             </div>
           </div>
         </div>
@@ -213,7 +212,7 @@ export default function Home() {
           <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-yellow-200 text-sm">
               <span>⚠️</span>
-              <span>Bot won't work without credentials configured</span>
+              <span>Bot won&apos;t work without credentials configured</span>
             </div>
             <button
               onClick={() => setIsSettingsOpen(true)}
@@ -284,6 +283,7 @@ export default function Home() {
           onDelete={handleDelete}
           richFiltersSupported={richFiltersSupported}
           activeSource={activeSource}
+          activeSourceDegraded={activeSourceDegraded}
         />
       )}
 

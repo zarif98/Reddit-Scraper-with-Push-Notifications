@@ -113,7 +113,10 @@ class _SourceState:
         if source != self.active_source:
             self.active_source = source
             logging.info(f"📡 Active Reddit data source: {source}")
-            status.save_bot_status(source != 'oauth', f"Active data source: {source}", active_source=source)
+            # "Fallback" = a degraded source (no score/domain), not merely "not oauth" — so
+            # the Sylvia gateway isn't wrongly flagged as a fallback. See config.RICH_SOURCES.
+            using_fallback = not config.supports_rich_filters(source)
+            status.save_bot_status(using_fallback, f"Active data source: {source}", active_source=source)
 
     # --- one-time OAuth-failure notification guard ---
     def claim_auth_error_notification(self):

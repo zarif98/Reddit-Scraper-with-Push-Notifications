@@ -273,6 +273,38 @@ class TestBackoff:
         assert sources._state.source_failures.get('rss', 0) == 0
 
 
+class TestActiveSourceFallbackFlag:
+    """The bot_status 'using_fallback' flag must track config.RICH_SOURCES, so the Sylvia
+    gateway isn't mislabeled as a degraded fallback in the UI."""
+
+    def _capture(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(
+            sources.status, 'save_bot_status', lambda using_fallback, *a, **k: calls.append(using_fallback)
+        )
+        return calls
+
+    def test_sylvia_is_not_fallback(self, monkeypatch):
+        calls = self._capture(monkeypatch)
+        sources._set_active_source('sylvia')
+        assert calls == [False]
+
+    def test_oauth_is_not_fallback(self, monkeypatch):
+        calls = self._capture(monkeypatch)
+        sources._set_active_source('oauth')
+        assert calls == [False]
+
+    def test_rss_is_fallback(self, monkeypatch):
+        calls = self._capture(monkeypatch)
+        sources._set_active_source('rss')
+        assert calls == [True]
+
+    def test_json_is_fallback(self, monkeypatch):
+        calls = self._capture(monkeypatch)
+        sources._set_active_source('json')
+        assert calls == [True]
+
+
 class TestProxying:
     def _record_get(self, monkeypatch):
         """Replace requests.get with a recorder returning a trivial 200 response."""

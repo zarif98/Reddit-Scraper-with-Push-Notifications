@@ -22,6 +22,9 @@ interface MonitorModalProps {
     // filters (which RSS/JSON can't provide) are hidden.
     richFiltersSupported?: boolean;
     activeSource?: string | null;
+    // True when the currently active source is a degradation (no score/domain). Backend-driven
+    // (config.RICH_SOURCES) so we don't hardcode which sources are degraded.
+    activeSourceDegraded?: boolean;
 }
 
 type TabType = 'filters' | 'alerts' | 'settings';
@@ -34,6 +37,7 @@ export default function MonitorModal({
     onDelete,
     richFiltersSupported = true,
     activeSource = null,
+    activeSourceDegraded = false,
 }: MonitorModalProps) {
     const [activeTab, setActiveTab] = useState<TabType>('filters');
     const [formData, setFormData] = useState<Partial<Monitor>>(DEFAULT_MONITOR);
@@ -446,7 +450,7 @@ export default function MonitorModal({
 
                                     {richFiltersSupported && (
                                     <>
-                                    {(activeSource === 'rss' || activeSource === 'json') && (
+                                    {activeSourceDegraded && (
                                         <div className="text-xs text-amber-300/80 bg-amber-500/10 border border-amber-500/20 rounded-md px-3 py-2">
                                             Currently fetching via <span className="font-semibold uppercase">{activeSource}</span>. Score and domain filters are paused until the Reddit API recovers.
                                         </div>

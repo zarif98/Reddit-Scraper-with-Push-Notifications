@@ -12,6 +12,17 @@ def reset_order():
     config.set_source_order(None)
 
 
+class TestRichSources:
+    def test_oauth_and_sylvia_are_rich(self):
+        assert config.supports_rich_filters('oauth')
+        assert config.supports_rich_filters('sylvia')
+
+    def test_rss_and_json_are_not_rich(self):
+        assert not config.supports_rich_filters('rss')
+        assert not config.supports_rich_filters('json')
+        assert not config.supports_rich_filters(None)
+
+
 class TestSourceOrder:
     def test_default_when_unset(self):
         config.set_source_order(None)

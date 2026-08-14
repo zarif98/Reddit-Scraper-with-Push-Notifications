@@ -62,17 +62,19 @@ def get_source_capability():
     creds = load_credentials()
     client_id = creds.get('reddit_client_id') or os.getenv('REDDIT_CLIENT_ID')
     client_secret = creds.get('reddit_client_secret') or os.getenv('REDDIT_CLIENT_SECRET')
+    sylvia_key = creds.get('sylvia_api_key') or os.getenv('SYLVIA_API_KEY')
+
     oauth_available = bool(client_id and client_secret) and 'oauth' in order
 
-    sylvia_key = creds.get('sylvia_api_key') or os.getenv('SYLVIA_API_KEY')
-    sylvia_available = bool(sylvia_key) and 'sylvia' in order
+    # Score/domain filters need a rich source (config.RICH_SOURCES) that's both in the order
+    # AND configured. Derives from the same constant the bot and UI use, so they can't drift.
+    rich_configured = {'oauth': bool(client_id and client_secret), 'sylvia': bool(sylvia_key)}
+    rich_filters_supported = any(s in order and rich_configured.get(s, False) for s in rs_config.RICH_SOURCES)
 
     return {
         'source_order': order,
         'oauth_available': oauth_available,
-        # score/domain need a full-data source: the authenticated API or the Sylvia
-        # gateway both expose them; RSS does not (so filters can't be applied there).
-        'rich_filters_supported': oauth_available or sylvia_available,
+        'rich_filters_supported': rich_filters_supported,
     }
 
 
