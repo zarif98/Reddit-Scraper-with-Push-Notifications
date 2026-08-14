@@ -1,7 +1,8 @@
 """Credential loading, sanitization, encoding checks, and PRAW authentication."""
-import os
+
 import json
 import logging
+import os
 
 import praw
 
@@ -65,13 +66,22 @@ def load_credentials():
     }
 
 
+def find_non_ascii(value):
+    """Return [(index, char), ...] for every non-ASCII character in value (empty if clean).
+
+    Reddit credentials are always ASCII, so any hit here is a red flag — typically a
+    lookalike character (e.g. a Cyrillic 'І' pasted for a Latin 'I') that would fail auth.
+    """
+    return [(i, c) for i, c in enumerate(value or '') if ord(c) > 127]
+
+
 def sanitize_credential(value, name):
     """Remove non-ASCII characters from credentials that cause latin-1 encoding errors."""
     if not value:
         return value
     sanitized = value.encode('ascii', 'ignore').decode('ascii')
     if value != sanitized:
-        positions = [i for i, c in enumerate(value) if ord(c) > 127]
+        positions = [i for i, _ in find_non_ascii(value)]
         logging.warning(f"⚠️ Removed non-ASCII characters from {name}: found Unicode at positions {positions}")
     return sanitized
 
@@ -86,17 +96,16 @@ def check_credential_encoding(creds):
     """
     global CREDENTIAL_WARNING
     offenders = []
-    for key in ('reddit_client_id', 'reddit_client_secret', 'reddit_user_agent',
-                'reddit_username', 'reddit_password'):
-        value = creds.get(key) or ''
-        bad = [i for i, c in enumerate(value) if ord(c) > 127]
+    for key in ('reddit_client_id', 'reddit_client_secret', 'reddit_user_agent', 'reddit_username', 'reddit_password'):
+        bad = [i for i, _ in find_non_ascii(creds.get(key))]
         if bad:
             offenders.append(f"{key} (positions {bad})")
 
     if offenders:
         CREDENTIAL_WARNING = (
-            "Non-ASCII characters detected in: " + "; ".join(offenders) +
-            ". This usually means a credential was pasted with a lookalike character "
+            "Non-ASCII characters detected in: "
+            + "; ".join(offenders)
+            + ". This usually means a credential was pasted with a lookalike character "
             "(e.g. Cyrillic 'І' for Latin 'I') and will cause a 401 / fall back to RSS. "
             "Re-copy the affected credential from https://www.reddit.com/prefs/apps."
         )
@@ -121,6 +130,7 @@ def detect_auth_capability():
     # the sources -> notifications -> credentials import cycle). Env var still works on its
     # own; this lets the key be set via the UI/credentials file too.
     from . import sources
+
     sources.SYLVIA_API_KEY = CREDENTIALS.get('sylvia_api_key')
     if CREDENTIALS.get('sylvia_api_key'):
         logging.info("🛰️  Sylvia gateway key configured (source 'sylvia' available if in the order).")
@@ -164,15 +174,15 @@ def authenticate_reddit():
 
     if username and password:
         logging.info("Authenticating Reddit (full OAuth)...")
-        return praw.Reddit(client_id=client_id,
-                           client_secret=client_secret,
-                           user_agent=user_agent,
-                           username=username,
-                           password=password)
+        return praw.Reddit(
+            client_id=client_id,
+            client_secret=client_secret,
+            user_agent=user_agent,
+            username=username,
+            password=password,
+        )
 
     logging.info("Authenticating Reddit (read-only, app-only)...")
-    reddit = praw.Reddit(client_id=client_id,
-                         client_secret=client_secret,
-                         user_agent=user_agent)
+    reddit = praw.Reddit(client_id=client_id, client_secret=client_secret, user_agent=user_agent)
     reddit.read_only = True
     return reddit

@@ -2,15 +2,17 @@
 
 Wiring + main loop only; the implementation lives in the reddit_scraper package.
 """
-import time
+
 import logging
+import time
 from concurrent.futures import ThreadPoolExecutor
 
+from colorama import Fore, Style, init
 from dotenv import load_dotenv
-from colorama import init, Fore, Style
 
 from reddit_scraper import config, credentials, health
 from reddit_scraper.monitor import RedditMonitor
+
 # Re-exported for the test suite / external callers.
 from reddit_scraper.sources import fetch_posts_json, fetch_thread_comments_json  # noqa: F401
 
@@ -56,6 +58,7 @@ def main():
     subreddits_to_search = cfg.get('subreddits_to_search', [])
     config.apply_source_order_from_config(cfg)
     last_config_mtime = config.get_config_mtime()
+    last_creds_mtime = config.get_credentials_mtime()
 
     # Track last run time for each monitor by ID
     last_run_times = {}
@@ -76,6 +79,15 @@ def main():
             else:
                 logging.warning("Failed to reload configuration, using previous settings.")
 
+        # Reload credentials when credentials.json changes (e.g. a Sylvia key or Reddit
+        # app entered via the UI) so new keys take effect without restarting the bot.
+        current_creds_mtime = config.get_credentials_mtime()
+        if current_creds_mtime != last_creds_mtime:
+            logging.info("Credentials changed, reloading...")
+            credentials.detect_auth_capability()  # re-bridges the Sylvia key into sources
+            reddit = credentials.authenticate_reddit()  # pick up new/changed Reddit app creds
+            last_creds_mtime = current_creds_mtime
+
         # Filter to only enabled monitors
         enabled_monitors = [m for m in subreddits_to_search if m.get('enabled', True)]
 
@@ -94,11 +106,15 @@ def main():
             if time_since_last_run >= refresh_interval:
                 monitors_to_run.append(monitor)
                 last_run_times[monitor_id] = current_time
-                logging.info(f"Running monitor: {monitor.get('name', monitor.get('subreddit'))} "
-                             f"(interval: {monitor.get('cooldown_minutes', 10)} min)")
+                logging.info(
+                    f"Running monitor: {monitor.get('name', monitor.get('subreddit'))} "
+                    f"(interval: {monitor.get('cooldown_minutes', 10)} min)"
+                )
             else:
                 time_remaining = int((refresh_interval - time_since_last_run) / 60)
-                logging.debug(f"Skipping {monitor.get('name', monitor.get('subreddit'))} - {time_remaining} min until next run")
+                logging.debug(
+                    f"Skipping {monitor.get('name', monitor.get('subreddit'))} - {time_remaining} min until next run"
+                )
 
         if monitors_to_run:
             with ThreadPoolExecutor() as executor:

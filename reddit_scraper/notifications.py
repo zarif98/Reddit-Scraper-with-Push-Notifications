@@ -1,4 +1,5 @@
 """Apprise-based notification dispatch."""
+
 import logging
 
 import apprise

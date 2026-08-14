@@ -2,34 +2,18 @@
 
 import { useState, useEffect } from 'react';
 import { getApiUrl } from '@/lib/api';
+import { Credentials, DEFAULT_CREDENTIALS, DataSource } from './settings/types';
+import DataSourceSection from './settings/DataSourceSection';
+import NotificationSection from './settings/NotificationSection';
 
 interface SettingsModalProps {
     onClose: () => void;
     onSave: () => void;
 }
 
-interface Credentials {
-    reddit_client_id: string;
-    reddit_client_secret: string;
-    reddit_username: string;
-    reddit_password: string;
-    reddit_user_agent: string;
-    sylvia_api_key: string;
-    notification_urls: string[];
-}
-
-const DEFAULT_CREDENTIALS: Credentials = {
-    reddit_client_id: '',
-    reddit_client_secret: '',
-    reddit_username: '',
-    reddit_password: '',
-    reddit_user_agent: '',
-    sylvia_api_key: '',
-    notification_urls: [],
-};
-
 export default function SettingsModal({ onClose, onSave }: SettingsModalProps) {
     const [credentials, setCredentials] = useState<Credentials>(DEFAULT_CREDENTIALS);
+    const [dataSource, setDataSource] = useState<DataSource>('reddit');
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [testing, setTesting] = useState(false);
@@ -44,15 +28,20 @@ export default function SettingsModal({ onClose, onSave }: SettingsModalProps) {
 
     const fetchCredentials = async () => {
         try {
-            const response = await fetch(`${getApiUrl()}/api/credentials`);
-            const data = await response.json();
+            const [credRes, orderRes] = await Promise.all([
+                fetch(`${getApiUrl()}/api/credentials`),
+                fetch(`${getApiUrl()}/api/source-order`),
+            ]);
+            const data = await credRes.json();
             setCredentials({
                 ...DEFAULT_CREDENTIALS,
                 ...data,
                 notification_urls: data.notification_urls || [],
             });
+            const order = await orderRes.json();
+            if (order.active_source === 'sylvia') setDataSource('sylvia');
         } catch (err) {
-            console.error('Failed to fetch credentials:', err);
+            console.error('Failed to fetch settings:', err);
         } finally {
             setLoading(false);
         }
@@ -108,6 +97,13 @@ export default function SettingsModal({ onClose, onSave }: SettingsModalProps) {
         setSaving(true);
 
         try {
+            // Persist the selected data source (writes the bot's source order).
+            await fetch(`${getApiUrl()}/api/source-order`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ active_source: dataSource }),
+            });
+
             const response = await fetch(`${getApiUrl()}/api/credentials`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
@@ -132,19 +128,6 @@ export default function SettingsModal({ onClose, onSave }: SettingsModalProps) {
         }
     };
 
-    // Get service name from URL for display
-    const getServiceName = (url: string) => {
-        if (url.startsWith('discord://')) return '📱 Discord';
-        if (url.startsWith('slack://')) return '💬 Slack';
-        if (url.startsWith('tgram://')) return '✈️ Telegram';
-        if (url.startsWith('pover://')) return '📲 Pushover';
-        if (url.startsWith('ntfy://')) return '🔔 ntfy';
-        if (url.startsWith('mailto://')) return '📧 Email';
-        if (url.startsWith('msteams://')) return '👥 Teams';
-        if (url.includes('://')) return url.split('://')[0];
-        return 'Custom';
-    };
-
     return (
         <div className="modal-overlay animate-fade-in" onClick={onClose}>
             <div
@@ -164,7 +147,7 @@ export default function SettingsModal({ onClose, onSave }: SettingsModalProps) {
                                 ✕
                             </button>
                             <h2 className="text-xl font-semibold text-white">⚙️ Settings</h2>
-                            <p className="text-sm text-white/60 mt-1">Configure Reddit & notification services</p>
+                            <p className="text-sm text-white/60 mt-1">Choose your data source & notifications</p>
                         </div>
 
                         {loading ? (
@@ -173,173 +156,23 @@ export default function SettingsModal({ onClose, onSave }: SettingsModalProps) {
                             </div>
                         ) : (
                             <div className="p-4 space-y-6">
-                                {/* Reddit Section */}
-                                <div>
-                                    <h3 className="text-sm font-semibold text-white/80 mb-3 flex items-center gap-2">
-                                        🤖 Reddit API
-                                    </h3>
-                                    <div className="space-y-3">
-                                        <div>
-                                            <label className="text-xs text-white/60 block mb-1">Client ID</label>
-                                            <input
-                                                type="text"
-                                                value={credentials.reddit_client_id}
-                                                onChange={(e) => handleChange('reddit_client_id', e.target.value)}
-                                                placeholder="Enter Client ID"
-                                                className="input-field text-sm"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="text-xs text-white/60 block mb-1">Client Secret</label>
-                                            <input
-                                                type="password"
-                                                value={credentials.reddit_client_secret}
-                                                onChange={(e) => handleChange('reddit_client_secret', e.target.value)}
-                                                placeholder="Enter Client Secret"
-                                                className="input-field text-sm"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="text-xs text-white/60 block mb-1">Username</label>
-                                            <input
-                                                type="text"
-                                                value={credentials.reddit_username}
-                                                onChange={(e) => handleChange('reddit_username', e.target.value)}
-                                                placeholder="Your Reddit username"
-                                                className="input-field text-sm"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="text-xs text-white/60 block mb-1">Password</label>
-                                            <input
-                                                type="password"
-                                                value={credentials.reddit_password}
-                                                onChange={(e) => handleChange('reddit_password', e.target.value)}
-                                                placeholder="Your Reddit password"
-                                                className="input-field text-sm"
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="text-xs text-white/60 block mb-1">User Agent</label>
-                                            <input
-                                                type="text"
-                                                value={credentials.reddit_user_agent}
-                                                onChange={(e) => handleChange('reddit_user_agent', e.target.value)}
-                                                placeholder="e.g. RedditMonitor by u/username"
-                                                className="input-field text-sm"
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
+                                <DataSourceSection
+                                    credentials={credentials}
+                                    dataSource={dataSource}
+                                    onDataSourceChange={(s) => { setDataSource(s); setError(null); setSuccess(false); }}
+                                    onChange={handleChange}
+                                />
 
-                                {/* Sylvia Gateway Section */}
-                                <div>
-                                    <h3 className="text-sm font-semibold text-white/80 mb-3 flex items-center gap-2">
-                                        🛰️ Sylvia Gateway <span className="text-xs text-white/40 font-normal">(optional fallback)</span>
-                                    </h3>
-                                    <div>
-                                        <label className="text-xs text-white/60 block mb-1">API Key</label>
-                                        <input
-                                            type="password"
-                                            value={credentials.sylvia_api_key}
-                                            onChange={(e) => handleChange('sylvia_api_key', e.target.value)}
-                                            placeholder="syl_..."
-                                            className="input-field text-sm"
-                                        />
-                                        <p className="text-xs text-white/40 mt-1">
-                                            Third-party Reddit gateway used as a fallback when the API is unavailable.
-                                            Add <code className="text-white/60">sylvia</code> to your source order to enable it.
-                                        </p>
-                                    </div>
-                                </div>
-
-                                {/* Notification Services Section */}
-                                <div>
-                                    <h3 className="text-sm font-semibold text-white/80 mb-3 flex items-center gap-2">
-                                        🔔 Notification Services
-                                    </h3>
-
-                                    {/* Existing URLs */}
-                                    <div className="space-y-2 mb-3">
-                                        {credentials.notification_urls.map((url, index) => (
-                                            <div key={index} className="flex items-center gap-2 bg-white/5 rounded-lg p-2">
-                                                <span className="text-sm text-white flex-1 truncate">
-                                                    {getServiceName(url)}
-                                                </span>
-                                                <code className="text-xs text-white/40 flex-1 truncate">
-                                                    {url.length > 25 ? url.substring(0, 25) + '...' : url}
-                                                </code>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => removeNotificationUrl(index)}
-                                                    className="text-red-400 hover:text-red-300 p-1"
-                                                >
-                                                    🗑️
-                                                </button>
-                                            </div>
-                                        ))}
-                                        {credentials.notification_urls.length === 0 && (
-                                            <p className="text-sm text-white/40 italic">No notification services configured</p>
-                                        )}
-                                    </div>
-
-                                    {/* Add new URL */}
-                                    <div className="flex gap-2 mb-3">
-                                        <input
-                                            type="text"
-                                            value={newUrl}
-                                            onChange={(e) => setNewUrl(e.target.value)}
-                                            onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addNotificationUrl())}
-                                            placeholder="discord://webhook_id/token"
-                                            className="input-field text-sm flex-1"
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={addNotificationUrl}
-                                            className="px-3 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-white"
-                                        >
-                                            +
-                                        </button>
-                                    </div>
-
-                                    {/* Test button */}
-                                    {credentials.notification_urls.length > 0 && (
-                                        <button
-                                            type="button"
-                                            onClick={testNotifications}
-                                            disabled={testing}
-                                            className="w-full py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-lg text-sm transition-colors mb-3"
-                                        >
-                                            {testing ? '⏳ Testing...' : '🧪 Test Notifications'}
-                                        </button>
-                                    )}
-                                    {testSuccess === true && (
-                                        <p className="text-sm text-green-400">✅ Test notification sent!</p>
-                                    )}
-                                    {testSuccess === false && (
-                                        <p className="text-sm text-red-400">❌ Test failed</p>
-                                    )}
-
-                                    {/* Help text */}
-                                    <div className="bg-white/5 rounded-lg p-3 text-xs text-white/50">
-                                        <p className="font-semibold mb-1">Supported services:</p>
-                                        <ul className="space-y-0.5">
-                                            <li>• Discord: <code>discord://webhook_id/token</code></li>
-                                            <li>• Slack: <code>slack://token/channel</code></li>
-                                            <li>• Telegram: <code>tgram://bot_token/chat_id</code></li>
-                                            <li>• Pushover: <code>pover://user_key@app_token</code></li>
-                                            <li>• ntfy: <code>ntfy://topic</code></li>
-                                        </ul>
-                                        <a
-                                            href="https://github.com/caronc/apprise"
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="text-blue-400 hover:underline mt-2 block"
-                                        >
-                                            See all 80+ services →
-                                        </a>
-                                    </div>
-                                </div>
+                                <NotificationSection
+                                    urls={credentials.notification_urls}
+                                    newUrl={newUrl}
+                                    onNewUrlChange={setNewUrl}
+                                    onAdd={addNotificationUrl}
+                                    onRemove={removeNotificationUrl}
+                                    onTest={testNotifications}
+                                    testing={testing}
+                                    testSuccess={testSuccess}
+                                />
                             </div>
                         )}
                     </div>

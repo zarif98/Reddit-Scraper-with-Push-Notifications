@@ -1,0 +1,22 @@
+# Ruff config — the single source of truth for Python style/lint in this repo.
+# See CLAUDE.md ("Coding principles") for the conventions this enforces.
+line-length = 120
+target-version = "py39"
+extend-exclude = ["frontend", "**/__pycache__"]
+
+[lint]
+# E/W: pycodestyle, F: pyflakes (unused imports/vars, f-strings w/o placeholders),
+# I: import sorting. Deliberately conservative — no opinionated reformatting rules.
+select = ["E", "W", "F", "I"]
+# Line length is owned by the formatter; a handful of URLs/strings can't wrap, so
+# don't fail lint on length.
+ignore = ["E501"]
+
+[lint.per-file-ignores]
+# conftest must insert the repo root onto sys.path before importing project modules.
+"tests/conftest.py" = ["E402"]
+
+[format]
+# The codebase is intentionally mixed (single-quoted keys/literals, double-quoted
+# f-strings/messages); preserve that rather than churn every string.
+quote-style = "preserve"

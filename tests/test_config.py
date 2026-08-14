@@ -1,4 +1,5 @@
 """Tests for source-order resolution (reddit_scraper.config)."""
+
 import pytest
 
 from reddit_scraper import config
@@ -12,7 +13,6 @@ def reset_order():
 
 
 class TestSourceOrder:
-
     def test_default_when_unset(self):
         config.set_source_order(None)
         assert config.get_source_order() == ['oauth', 'json', 'rss']
@@ -33,7 +33,6 @@ class TestSourceOrder:
 
 
 class TestApplySourceOrderFromConfig:
-
     def test_config_source_order_takes_precedence_over_env(self, monkeypatch):
         monkeypatch.setenv('REDDIT_SOURCE_ORDER', 'json,rss')
         config.apply_source_order_from_config({'source_order': ['rss']})
