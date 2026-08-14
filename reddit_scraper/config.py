@@ -9,6 +9,8 @@ import logging
 import os
 import uuid
 
+from . import models
+
 # Monitor color palette (used to auto-assign a color on create). MUST stay in sync with the
 # frontend picker in frontend/types/monitor.ts — keep the two lists identical.
 DEFAULT_COLORS = [
@@ -22,15 +24,6 @@ DEFAULT_COLORS = [
     '#EAB308',  # Yellow
     '#10B981',  # Emerald
     '#F43F5E',  # Rose
-]
-
-OPTIONAL_LIST_FIELDS = [
-    'exclude_keywords',
-    'domain_contains',
-    'domain_excludes',
-    'flair_contains',
-    'author_includes',
-    'author_excludes',
 ]
 
 # Data-source pathways, tried in order by the dispatcher:
@@ -126,48 +119,33 @@ def save_config(config):
         json.dump(config, f, indent=4)
 
 
-def clean_monitor(monitor):
-    """Strip optional fields that are empty/null to keep search.json tidy."""
-    for field in OPTIONAL_LIST_FIELDS:
-        if field in monitor and not monitor[field]:
-            del monitor[field]
-    if 'min_upvotes' in monitor and monitor['min_upvotes'] is None:
-        del monitor['min_upvotes']
-    return monitor
+def normalize_monitor(monitor, index=0):
+    """Return a monitor dict normalized through the Monitor model: missing id/name/color and
+    other defaults filled in, tidy on-disk shape. Bot-only/legacy fields are preserved. A
+    monitor that can't be validated (e.g. no subreddit) is returned unchanged."""
+    try:
+        seeded = {
+            'id': monitor.get('id') or str(uuid.uuid4()),
+            'color': monitor.get('color') or DEFAULT_COLORS[index % len(DEFAULT_COLORS)],
+            **monitor,
+        }
+        return models.Monitor(**seeded).to_stored_dict()
+    except Exception:
+        return monitor
 
 
 def load_managed_config():
-    """Normalizing read used by the API: ensures ids/fields, creates a default
-    file when missing, and persists any fields it had to add."""
+    """Normalizing read used by the API: fills in ids/defaults via the Monitor model, creates
+    a default file when missing, and persists any normalization it had to apply."""
     path = get_config_path()
     try:
         with open(path, 'r') as f:
             config = json.load(f)
 
         monitors = config.get('subreddits_to_search', [])
-        updated = False
-        for i, monitor in enumerate(monitors):
-            if 'id' not in monitor:
-                monitor['id'] = str(uuid.uuid4())
-                updated = True
-            if 'name' not in monitor:
-                monitor['name'] = f"r/{monitor.get('subreddit', 'unknown')}"
-                updated = True
-            if 'color' not in monitor:
-                monitor['color'] = DEFAULT_COLORS[i % len(DEFAULT_COLORS)]
-                updated = True
-            if 'enabled' not in monitor:
-                monitor['enabled'] = True
-                updated = True
-            if 'cooldown_minutes' not in monitor:
-                monitor['cooldown_minutes'] = 10
-                updated = True
-            if 'max_post_age_hours' not in monitor:
-                monitor['max_post_age_hours'] = 12
-                updated = True
-
-        if updated:
-            config['subreddits_to_search'] = monitors
+        normalized = [normalize_monitor(m, i) for i, m in enumerate(monitors)]
+        if normalized != monitors:
+            config['subreddits_to_search'] = normalized
             save_config(config)
         return config
     except FileNotFoundError:

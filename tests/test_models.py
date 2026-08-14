@@ -14,9 +14,21 @@ class TestMonitorModel:
         assert m.cooldown_minutes == 10
         assert m.max_post_age_hours == 12
         assert m.min_upvotes is None
-        assert m.keyword_logic == 'any'
-        assert m.monitor_type == 'posts'
         assert m.keywords == [] and m.domain_contains == []
+
+    def test_normalizes_subreddit_and_defaults_name(self):
+        m = models.Monitor(id='1', subreddit='R/GameDeals', color='#fff')
+        assert m.subreddit == 'gamedeals'  # stripped/lowercased, r/ removed
+        assert m.name == 'r/gamedeals'  # name defaults from subreddit
+
+    def test_preserves_bot_only_fields(self):
+        m = models.Monitor(id='1', subreddit='x', color='#fff', monitor_type='thread_comments')
+        assert m.to_stored_dict()['monitor_type'] == 'thread_comments'  # extra='allow' passthrough
+
+    def test_to_stored_dict_strips_empties(self):
+        stored = models.Monitor(id='1', subreddit='x', color='#fff').to_stored_dict()
+        assert 'exclude_keywords' not in stored and 'min_upvotes' not in stored
+        assert stored['keywords'] == []  # keywords is always kept
 
     def test_round_trips_a_full_monitor(self):
         data = {
