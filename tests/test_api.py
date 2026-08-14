@@ -160,6 +160,18 @@ class TestCredentialsAPI:
         if data.get('reddit_client_id'):
             assert '••••' in data['reddit_client_id']
 
+    def test_created_monitor_conforms_to_model(self, client):
+        """A monitor created by the API must validate against the Monitor schema-of-record
+        and write no fields the model doesn't know about (drift guard)."""
+        from reddit_scraper import models
+
+        resp = client.post('/api/monitors', json={'subreddit': 'gamedeals'})
+        assert resp.status_code == 201
+        monitor = resp.get_json()
+        unknown = set(monitor) - set(models.Monitor.model_fields)
+        assert unknown == set(), f"API writes fields not in Monitor model: {unknown}"
+        models.Monitor(**monitor)  # must validate
+
     def test_source_order_defaults_to_reddit(self, client):
         """With no source_order saved, the active source reports as reddit."""
         response = client.get('/api/source-order')

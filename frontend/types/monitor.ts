@@ -1,21 +1,7 @@
-export interface Monitor {
-    id: string;
-    name: string;
-    subreddit: string;
-    keywords: string[];
-    exclude_keywords: string[];
-    min_upvotes: number | null;
-    color: string;
-    enabled: boolean;
-    cooldown_minutes: number;
-    max_post_age_hours: number;
-    // New filter fields
-    domain_contains: string[];
-    domain_excludes: string[];
-    flair_contains: string[];
-    author_includes: string[];
-    author_excludes: string[];
-}
+// Monitor is generated from reddit_scraper/models.py (the schema-of-record).
+// Regenerate with `npm run gen:types`. Don't hand-write this shape here.
+export type { Monitor } from './generated';
+import type { Monitor } from './generated';
 
 // MUST stay in sync with DEFAULT_COLORS in reddit_scraper/config.py (backend auto-assigns
 // from that list on create; this is the picker) — keep the two lists identical.

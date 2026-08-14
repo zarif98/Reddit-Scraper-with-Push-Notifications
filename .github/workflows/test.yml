@@ -24,8 +24,25 @@ jobs:
       run: |
         pip install -r requirements.txt
         pip install -r requirements-test.txt
-    
+
+    - name: Lint + format (ruff)
+      run: |
+        ruff check .
+        ruff format --check .
+
     - name: Run tests
       run: pytest tests/ -v --tb=short
       env:
         DATA_DIR: /tmp/test-data
+
+    - name: Set up Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Check generated TS types are up to date
+      run: |
+        npm --prefix frontend ci
+        python3 scripts/gen_types.py
+        git diff --exit-code frontend/types/generated.ts \
+          || (echo "generated.ts is stale — run 'npm run gen:types' and commit" && exit 1)
