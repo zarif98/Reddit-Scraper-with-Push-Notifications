@@ -51,14 +51,14 @@ def get_source_capability():
     """Report which data-source pathways are configured and whether the OAuth API
     (required for score/domain filters) is available. Used by the UI to hide filters
     that the active pathways can't provide."""
-    valid = ('oauth', 'rss', 'json', 'sylvia')
+    default_order = rs_config.DEFAULT_SOURCE_ORDER
     try:
         config = load_config() or {}
     except Exception:
         config = {}
-    order = [s for s in (config.get('source_order') or ['oauth', 'rss', 'json']) if s in valid]
+    order = [s for s in (config.get('source_order') or default_order) if s in rs_config.VALID_SOURCES]
     if not order:
-        order = ['oauth', 'rss', 'json']
+        order = list(default_order)
 
     creds = load_credentials()
     client_id = creds.get('reddit_client_id') or os.getenv('REDDIT_CLIENT_ID')
