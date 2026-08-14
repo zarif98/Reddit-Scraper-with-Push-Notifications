@@ -4,6 +4,7 @@ Posts/comments are fetched through several pathways, tried in the configured ord
 (see config.get_source_order). A source that errors or returns nothing is put on a
 short cooldown so we don't keep hammering a blocked endpoint.
 """
+
 import html
 import logging
 import os
@@ -21,15 +22,17 @@ ATOM_NS = {'a': 'http://www.w3.org/2005/Atom'}
 RSS_USER_AGENT = os.getenv(
     'RSS_USER_AGENT',
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 '
-    '(KHTML, like Gecko) Version/17.0 Safari/605.1.15'
+    '(KHTML, like Gecko) Version/17.0 Safari/605.1.15',
 )
-JSON_USER_AGENT = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-                   '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+JSON_USER_AGENT = (
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+)
 
 # --- Tuning knobs (config; read from env once, overridable in tests) ---
-SOURCE_COOLDOWN_SECONDS = int(os.getenv('SOURCE_COOLDOWN_SECONDS', '300'))      # base cooldown
-SOURCE_COOLDOWN_MAX = int(os.getenv('SOURCE_COOLDOWN_MAX_SECONDS', '3600'))     # cap on backoff
-RSS_MIN_INTERVAL = float(os.getenv('RSS_MIN_INTERVAL_SECONDS', '4'))            # min gap between RSS reqs
+SOURCE_COOLDOWN_SECONDS = int(os.getenv('SOURCE_COOLDOWN_SECONDS', '300'))  # base cooldown
+SOURCE_COOLDOWN_MAX = int(os.getenv('SOURCE_COOLDOWN_MAX_SECONDS', '3600'))  # cap on backoff
+RSS_MIN_INTERVAL = float(os.getenv('RSS_MIN_INTERVAL_SECONDS', '4'))  # min gap between RSS reqs
+
 
 # Optional proxying so the anonymous RSS/JSON endpoints aren't all hit from one IP
 # (the IP Reddit ends up flagging). REDDIT_PROXIES is a comma-separated pool rotated
@@ -43,6 +46,7 @@ def _parse_proxies():
         return [p.strip() for p in pool.split(',') if p.strip()]
     single = (os.getenv('REDDIT_PROXY') or '').strip()
     return [single] if single else []
+
 
 _PROXIES = _parse_proxies()
 PROXY_COOLDOWN_SECONDS = int(os.getenv('PROXY_COOLDOWN_SECONDS', '120'))
@@ -79,26 +83,26 @@ class _SourceState:
 
     def reset(self):
         """Reset all runtime state to fresh (called at import and between tests)."""
-        self.last_fetch_success_ts = None   # last time ANY fetch succeeded (Kuma heartbeat)
-        self.active_source = None           # data source currently serving data
-        self.auth_error_notified = False    # OAuth-401 notified? (reset on next oauth success)
+        self.last_fetch_success_ts = None  # last time ANY fetch succeeded (Kuma heartbeat)
+        self.active_source = None  # data source currently serving data
+        self.auth_error_notified = False  # OAuth-401 notified? (reset on next oauth success)
 
-        self.source_cooldown_until = {}     # source -> epoch until which it is skipped
-        self.source_failures = {}           # source -> consecutive failure count (for backoff)
+        self.source_cooldown_until = {}  # source -> epoch until which it is skipped
+        self.source_failures = {}  # source -> consecutive failure count (for backoff)
         self._lock = threading.Lock()
 
-        self.rss_last_request = 0.0         # RSS is per-IP rate-limited; serialize with a gap
+        self.rss_last_request = 0.0  # RSS is per-IP rate-limited; serialize with a gap
         self._rss_lock = threading.Lock()
 
-        self.proxy_index = 0                # round-robin cursor over _PROXIES
-        self.proxy_cooldown_until = {}      # proxy -> epoch until which it is skipped
+        self.proxy_index = 0  # round-robin cursor over _PROXIES
+        self.proxy_cooldown_until = {}  # proxy -> epoch until which it is skipped
         self._proxy_lock = threading.Lock()
 
-        self.fetch_cache = {}               # coalesce key -> (timestamp, value)
-        self.key_locks = {}                 # coalesce key -> Lock (callers share, not stampede)
+        self.fetch_cache = {}  # coalesce key -> (timestamp, value)
+        self.key_locks = {}  # coalesce key -> Lock (callers share, not stampede)
         self._cache_lock = threading.Lock()
 
-        self.sylvia_key_warned = False      # so the "no Sylvia key" skip logs once
+        self.sylvia_key_warned = False  # so the "no Sylvia key" skip logs once
 
     # --- fetch-success heartbeat / active source ---
     def record_fetch_success(self):
@@ -290,11 +294,12 @@ def _http_get(url, headers, timeout=15):
         if proxy is None:
             break
         try:
-            return requests.get(url, headers=headers, timeout=timeout,
-                                 proxies={'http': proxy, 'https': proxy})
-        except (requests.exceptions.ProxyError,
-                requests.exceptions.ConnectTimeout,
-                requests.exceptions.ConnectionError) as e:
+            return requests.get(url, headers=headers, timeout=timeout, proxies={'http': proxy, 'https': proxy})
+        except (
+            requests.exceptions.ProxyError,
+            requests.exceptions.ConnectTimeout,
+            requests.exceptions.ConnectionError,
+        ) as e:
             last_err = e
             _mark_proxy_down(proxy)
             logging.warning(f"Proxy {_redact_proxy(proxy)} failed to connect: {e}; trying next")
@@ -311,16 +316,18 @@ def fetch_posts_json(subreddit, limit=10):
         posts = []
         for child in data.get('data', {}).get('children', []):
             post_data = child.get('data', {})
-            posts.append({
-                'id': post_data.get('id', ''),
-                'title': post_data.get('title', ''),
-                'url': post_data.get('url', ''),
-                'score': post_data.get('score', 0),
-                'permalink': post_data.get('permalink', ''),
-                'domain': post_data.get('domain', ''),
-                'link_flair_text': post_data.get('link_flair_text', ''),
-                'author': post_data.get('author', ''),
-            })
+            posts.append(
+                {
+                    'id': post_data.get('id', ''),
+                    'title': post_data.get('title', ''),
+                    'url': post_data.get('url', ''),
+                    'score': post_data.get('score', 0),
+                    'permalink': post_data.get('permalink', ''),
+                    'domain': post_data.get('domain', ''),
+                    'link_flair_text': post_data.get('link_flair_text', ''),
+                    'author': post_data.get('author', ''),
+                }
+            )
         record_fetch_success()
         return posts
     except requests.exceptions.RequestException as e:
@@ -345,13 +352,15 @@ def fetch_thread_comments_json(subreddit, thread_id, limit=500):
             if child.get('kind') != 't1':
                 continue
             d = child['data']
-            comments.append({
-                'id': d.get('id', ''),
-                'body': d.get('body', ''),
-                'author': d.get('author', ''),
-                'score': d.get('score', 0),
-                'permalink': d.get('permalink', ''),
-            })
+            comments.append(
+                {
+                    'id': d.get('id', ''),
+                    'body': d.get('body', ''),
+                    'author': d.get('author', ''),
+                    'score': d.get('score', 0),
+                    'permalink': d.get('permalink', ''),
+                }
+            )
         return comments
     except Exception as e:
         logging.error(f"Error fetching comments for thread {thread_id}: {e}")
@@ -362,8 +371,7 @@ def _sylvia_get(path):
     """GET a Sylvia gateway path with the API key. Raises RuntimeError on auth (401/403)
     and rate-limit (429) so the dispatcher cools the source down; raises for other HTTP
     errors too. Returns the parsed JSON body."""
-    response = requests.get(f"{SYLVIA_BASE_URL}{path}",
-                            headers={'X-API-KEY': SYLVIA_API_KEY}, timeout=SYLVIA_TIMEOUT)
+    response = requests.get(f"{SYLVIA_BASE_URL}{path}", headers={'X-API-KEY': SYLVIA_API_KEY}, timeout=SYLVIA_TIMEOUT)
     if response.status_code in (401, 403):
         raise RuntimeError(f"Sylvia auth failed ({response.status_code}); check SYLVIA_API_KEY")
     if response.status_code == 429:
@@ -379,16 +387,18 @@ def fetch_posts_sylvia(subreddit, limit=10):
     data = _sylvia_get(f"/r/{subreddit}/new?limit={limit}")
     posts = []
     for post_data in data.get('data', {}).get('posts', [])[:limit]:
-        posts.append({
-            'id': post_data.get('id', ''),
-            'title': post_data.get('title', ''),
-            'url': post_data.get('url', ''),
-            'score': post_data.get('score', 0),
-            'permalink': post_data.get('permalink', ''),
-            'domain': post_data.get('domain', ''),
-            'link_flair_text': post_data.get('link_flair_text') or '',
-            'author': post_data.get('author', ''),
-        })
+        posts.append(
+            {
+                'id': post_data.get('id', ''),
+                'title': post_data.get('title', ''),
+                'url': post_data.get('url', ''),
+                'score': post_data.get('score', 0),
+                'permalink': post_data.get('permalink', ''),
+                'domain': post_data.get('domain', ''),
+                'link_flair_text': post_data.get('link_flair_text') or '',
+                'author': post_data.get('author', ''),
+            }
+        )
     record_fetch_success()
     return posts
 
@@ -408,13 +418,15 @@ def fetch_thread_comments_sylvia(subreddit, thread_id, limit=500):
         if child.get('kind') != 't1':
             continue
         d = child['data']
-        comments.append({
-            'id': d.get('id', ''),
-            'body': d.get('body', ''),
-            'author': d.get('author', ''),
-            'score': d.get('score', 0),
-            'permalink': d.get('permalink', ''),
-        })
+        comments.append(
+            {
+                'id': d.get('id', ''),
+                'body': d.get('body', ''),
+                'author': d.get('author', ''),
+                'score': d.get('score', 0),
+                'permalink': d.get('permalink', ''),
+            }
+        )
     return comments
 
 
@@ -432,11 +444,12 @@ def fetch_posts_rss(subreddit, limit=10):
     root = ET.fromstring(response.content)
     posts = []
     for entry in root.findall('a:entry', ATOM_NS)[:limit]:
+
         def text(tag):
             el = entry.find(f'a:{tag}', ATOM_NS)
             return el.text if (el is not None and el.text) else ''
 
-        raw_id = text('id')                       # e.g. "t3_abc123"
+        raw_id = text('id')  # e.g. "t3_abc123"
         post_id = raw_id.split('_')[-1] if raw_id else ''
         link_el = entry.find('a:link', ATOM_NS)
         href = link_el.get('href') if link_el is not None else ''
@@ -448,16 +461,18 @@ def fetch_posts_rss(subreddit, limit=10):
         cat_el = entry.find('a:category', ATOM_NS)
         flair = cat_el.get('term') if cat_el is not None else ''
 
-        posts.append({
-            'id': post_id,
-            'title': text('title'),
-            'url': href,
-            'score': 0,            # not exposed via RSS
-            'permalink': permalink,
-            'domain': '',          # not exposed via RSS
-            'link_flair_text': flair or '',
-            'author': author,
-        })
+        posts.append(
+            {
+                'id': post_id,
+                'title': text('title'),
+                'url': href,
+                'score': 0,  # not exposed via RSS
+                'permalink': permalink,
+                'domain': '',  # not exposed via RSS
+                'link_flair_text': flair or '',
+                'author': author,
+            }
+        )
     return posts
 
 
@@ -475,7 +490,7 @@ def fetch_thread_comments_rss(subreddit, thread_id, limit=500):
     for entry in root.findall('a:entry', ATOM_NS):
         id_el = entry.find('a:id', ATOM_NS)
         raw_id = (id_el.text or '') if id_el is not None else ''
-        if not raw_id.startswith('t1_'):          # keep comments only, not the post itself
+        if not raw_id.startswith('t1_'):  # keep comments only, not the post itself
             continue
         content_el = entry.find('a:content', ATOM_NS)
         body_html = (content_el.text or '') if content_el is not None else ''
@@ -486,13 +501,15 @@ def fetch_thread_comments_rss(subreddit, thread_id, limit=500):
             author = author[3:]
         link_el = entry.find('a:link', ATOM_NS)
         permalink = urlparse(link_el.get('href')).path if link_el is not None else ''
-        comments.append({
-            'id': raw_id.split('_')[-1],
-            'body': body,
-            'author': author,
-            'score': 0,
-            'permalink': permalink,
-        })
+        comments.append(
+            {
+                'id': raw_id.split('_')[-1],
+                'body': body,
+                'author': author,
+                'score': 0,
+                'permalink': permalink,
+            }
+        )
     return comments
 
 
@@ -501,24 +518,25 @@ def _fetch_posts_oauth(reddit, subreddit, limit):
     sub = reddit.subreddit(subreddit)
     posts = []
     for s in sub.new(limit=limit):
-        posts.append({
-            'id': s.id,
-            'title': s.title,
-            'url': s.url,
-            'score': s.score,
-            'permalink': s.permalink,
-            'domain': getattr(s, 'domain', '') or '',
-            'link_flair_text': getattr(s, 'link_flair_text', '') or '',
-            'author': s.author.name if s.author else '',
-        })
+        posts.append(
+            {
+                'id': s.id,
+                'title': s.title,
+                'url': s.url,
+                'score': s.score,
+                'permalink': s.permalink,
+                'domain': getattr(s, 'domain', '') or '',
+                'link_flair_text': getattr(s, 'link_flair_text', '') or '',
+                'author': s.author.name if s.author else '',
+            }
+        )
     return posts
 
 
 def fetch_posts(subreddit, limit, reddit):
     """Fetch posts, coalescing concurrent/duplicate calls for the same subreddit+limit
     so overlapping monitors share one request. See _fetch_posts_impl for the chain."""
-    return _coalesce(('posts', subreddit, limit),
-                     lambda: _fetch_posts_impl(subreddit, limit, reddit))
+    return _coalesce(('posts', subreddit, limit), lambda: _fetch_posts_impl(subreddit, limit, reddit))
 
 
 def _fetch_posts_impl(subreddit, limit, reddit):
@@ -547,7 +565,8 @@ def _fetch_posts_impl(subreddit, limit, reddit):
             if source == 'oauth' and ('401' in error_str or 'unauthorized' in error_str.lower()):
                 if _claim_auth_error_notification():
                     notifications.notify_error(
-                        "Reddit API authentication failed (401). Falling back to alternative sources (RSS/JSON).")
+                        "Reddit API authentication failed (401). Falling back to alternative sources (RSS/JSON)."
+                    )
             logging.warning(f"Reddit source '{source}' failed for r/{subreddit}: {e}")
             _mark_source_down(source)
             continue
@@ -571,8 +590,9 @@ def _fetch_posts_impl(subreddit, limit, reddit):
 def fetch_thread_comments(subreddit, thread_id, reddit):
     """Fetch a thread's comments, coalescing concurrent/duplicate calls for the same
     thread so overlapping monitors share one request. See _fetch_thread_comments_impl."""
-    return _coalesce(('comments', subreddit, thread_id),
-                     lambda: _fetch_thread_comments_impl(subreddit, thread_id, reddit))
+    return _coalesce(
+        ('comments', subreddit, thread_id), lambda: _fetch_thread_comments_impl(subreddit, thread_id, reddit)
+    )
 
 
 def _fetch_thread_comments_impl(subreddit, thread_id, reddit):

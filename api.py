@@ -43,11 +43,7 @@ def save_config(config):
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint."""
-    return jsonify({
-        'status': 'ok',
-        'timestamp': datetime.now().isoformat(),
-        'config_path': CONFIG_FILE_PATH
-    })
+    return jsonify({'status': 'ok', 'timestamp': datetime.now().isoformat(), 'config_path': CONFIG_FILE_PATH})
 
 
 def get_source_capability():
@@ -111,9 +107,7 @@ def search_subreddits():
         # Use Reddit's search API
         headers = {'User-Agent': 'RedditMonitorWebUI/1.0'}
         response = requests.get(
-            f'https://www.reddit.com/subreddits/search.json?q={query}&limit=10',
-            headers=headers,
-            timeout=5
+            f'https://www.reddit.com/subreddits/search.json?q={query}&limit=10', headers=headers, timeout=5
         )
 
         if response.status_code == 200:
@@ -121,12 +115,14 @@ def search_subreddits():
             subreddits = []
             for child in data.get('data', {}).get('children', []):
                 sub_data = child.get('data', {})
-                subreddits.append({
-                    'name': sub_data.get('display_name', ''),
-                    'title': sub_data.get('title', ''),
-                    'subscribers': sub_data.get('subscribers', 0),
-                    'public_description': sub_data.get('public_description', '')[:100]
-                })
+                subreddits.append(
+                    {
+                        'name': sub_data.get('display_name', ''),
+                        'title': sub_data.get('title', ''),
+                        'subscribers': sub_data.get('subscribers', 0),
+                        'public_description': sub_data.get('public_description', '')[:100],
+                    }
+                )
             return jsonify({'subreddits': subreddits})
         else:
             return jsonify({'subreddits': [], 'error': 'Reddit API error'})
@@ -142,24 +138,22 @@ def validate_subreddit(subreddit_name):
 
     try:
         headers = {'User-Agent': 'RedditMonitorWebUI/1.0'}
-        response = requests.get(
-            f'https://www.reddit.com/r/{subreddit_name}/about.json',
-            headers=headers,
-            timeout=5
-        )
+        response = requests.get(f'https://www.reddit.com/r/{subreddit_name}/about.json', headers=headers, timeout=5)
 
         if response.status_code == 200:
             data = response.json()
             sub_data = data.get('data', {})
             # Check if it's a valid subreddit (has required fields)
             if sub_data.get('display_name'):
-                return jsonify({
-                    'valid': True,
-                    'name': sub_data.get('display_name'),
-                    'title': sub_data.get('title', ''),
-                    'subscribers': sub_data.get('subscribers', 0),
-                    'nsfw': sub_data.get('over18', False)
-                })
+                return jsonify(
+                    {
+                        'valid': True,
+                        'name': sub_data.get('display_name'),
+                        'title': sub_data.get('title', ''),
+                        'subscribers': sub_data.get('subscribers', 0),
+                        'nsfw': sub_data.get('over18', False),
+                    }
+                )
 
         # Subreddit doesn't exist or is private
         return jsonify({'valid': False, 'error': 'Subreddit not found'})
@@ -173,9 +167,7 @@ def get_monitors():
     """Get all monitors."""
     try:
         config = load_config()
-        return jsonify({
-            'monitors': config.get('subreddits_to_search', [])
-        })
+        return jsonify({'monitors': config.get('subreddits_to_search', [])})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -211,7 +203,7 @@ def create_monitor():
             'domain_excludes': data.get('domain_excludes', []),
             'flair_contains': data.get('flair_contains', []),
             'author_includes': data.get('author_includes', []),
-            'author_excludes': data.get('author_excludes', [])
+            'author_excludes': data.get('author_excludes', []),
         }
 
         clean_monitor(new_monitor)
@@ -341,14 +333,16 @@ def get_credentials_status():
     """Check if credentials are configured (without exposing them)."""
     creds = load_credentials()
     notification_urls = creds.get('notification_urls', [])
-    return jsonify({
-        'configured': is_configured(),
-        'has_reddit': bool(creds.get('reddit_client_id') and creds.get('reddit_client_secret')),
-        'has_notifications': len(notification_urls) > 0,
-        'notification_count': len(notification_urls),
-        'has_reddit_username': bool(creds.get('reddit_username')),
-        'has_sylvia': bool(creds.get('sylvia_api_key')),
-    })
+    return jsonify(
+        {
+            'configured': is_configured(),
+            'has_reddit': bool(creds.get('reddit_client_id') and creds.get('reddit_client_secret')),
+            'has_notifications': len(notification_urls) > 0,
+            'notification_count': len(notification_urls),
+            'has_reddit_username': bool(creds.get('reddit_username')),
+            'has_sylvia': bool(creds.get('sylvia_api_key')),
+        }
+    )
 
 
 @app.route('/api/credentials', methods=['GET'])
@@ -367,16 +361,18 @@ def get_credentials():
         else:
             masked_urls.append('••••••••')
 
-    return jsonify({
-        'reddit_client_id': mask_value(creds.get('reddit_client_id', '')),
-        'reddit_client_secret': mask_value(creds.get('reddit_client_secret', '')),
-        'reddit_username': creds.get('reddit_username', ''),
-        'reddit_password': mask_value(creds.get('reddit_password', '')),
-        'reddit_user_agent': creds.get('reddit_user_agent', ''),
-        'sylvia_api_key': mask_value(creds.get('sylvia_api_key', '')),
-        'notification_urls': notification_urls,  # Return full URLs for editing
-        'notification_urls_masked': masked_urls,  # Masked for display
-    })
+    return jsonify(
+        {
+            'reddit_client_id': mask_value(creds.get('reddit_client_id', '')),
+            'reddit_client_secret': mask_value(creds.get('reddit_client_secret', '')),
+            'reddit_username': creds.get('reddit_username', ''),
+            'reddit_password': mask_value(creds.get('reddit_password', '')),
+            'reddit_user_agent': creds.get('reddit_user_agent', ''),
+            'sylvia_api_key': mask_value(creds.get('sylvia_api_key', '')),
+            'notification_urls': notification_urls,  # Return full URLs for editing
+            'notification_urls_masked': masked_urls,  # Masked for display
+        }
+    )
 
 
 def mask_value(value):
@@ -404,28 +400,28 @@ def validate_reddit_credentials(client_id, client_secret, username, password, us
     Returns (success: bool, error_message: str or None)
     """
     # First, check for non-ASCII characters
-    for name, value in [('client_id', client_id), ('client_secret', client_secret),
-                        ('username', username), ('password', password), ('user_agent', user_agent)]:
+    for name, value in [
+        ('client_id', client_id),
+        ('client_secret', client_secret),
+        ('username', username),
+        ('password', password),
+        ('user_agent', user_agent),
+    ]:
         non_ascii = rs_credentials.find_non_ascii(value)
         if non_ascii:
             i, c = non_ascii[0]
-            return False, f"Non-ASCII character found in {name} at position {i}: '{c}' ({hex(ord(c))}). Please re-type the credential."
+            return (
+                False,
+                f"Non-ASCII character found in {name} at position {i}: '{c}' ({hex(ord(c))}). Please re-type the credential.",
+            )
 
     # Try to authenticate with Reddit
     try:
         auth = requests.auth.HTTPBasicAuth(client_id, client_secret)
         headers = {'User-Agent': user_agent}
-        data = {
-            'grant_type': 'password',
-            'username': username,
-            'password': password
-        }
+        data = {'grant_type': 'password', 'username': username, 'password': password}
         response = requests.post(
-            'https://www.reddit.com/api/v1/access_token',
-            auth=auth,
-            headers=headers,
-            data=data,
-            timeout=10
+            'https://www.reddit.com/api/v1/access_token', auth=auth, headers=headers, data=data, timeout=10
         )
 
         if response.status_code == 200:
@@ -462,8 +458,14 @@ def update_credentials():
         creds = load_credentials()
 
         # Only update fields that are provided and not masked
-        fields = ['reddit_client_id', 'reddit_client_secret', 'reddit_username',
-                  'reddit_password', 'reddit_user_agent', 'sylvia_api_key']
+        fields = [
+            'reddit_client_id',
+            'reddit_client_secret',
+            'reddit_username',
+            'reddit_password',
+            'reddit_user_agent',
+            'sylvia_api_key',
+        ]
 
         for field in fields:
             if field in data and not is_masked(data[field]):
@@ -483,22 +485,20 @@ def update_credentials():
                 creds.get('reddit_client_secret', ''),
                 creds.get('reddit_username', ''),
                 creds.get('reddit_password', ''),
-                creds.get('reddit_user_agent', 'RedditMonitor/1.0')
+                creds.get('reddit_user_agent', 'RedditMonitor/1.0'),
             )
             if not valid:
-                return jsonify({
-                    'success': False,
-                    'error': error,
-                    'validation_failed': True
-                }), 400
+                return jsonify({'success': False, 'error': error, 'validation_failed': True}), 400
 
         save_credentials(creds)
 
-        return jsonify({
-            'success': True,
-            'configured': is_configured(),
-            'notification_count': len(creds.get('notification_urls', []))
-        })
+        return jsonify(
+            {
+                'success': True,
+                'configured': is_configured(),
+                'notification_count': len(creds.get('notification_urls', [])),
+            }
+        )
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -537,8 +537,7 @@ def update_source_order():
         config = load_config() or {}
         config['source_order'] = SOURCE_PRESETS[active]
         save_config(config)
-        return jsonify({'success': True, 'active_source': active,
-                        'source_order': SOURCE_PRESETS[active]})
+        return jsonify({'success': True, 'active_source': active, 'source_order': SOURCE_PRESETS[active]})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -558,17 +557,11 @@ def test_reddit_credentials():
         user_agent = data.get('reddit_user_agent') or creds.get('reddit_user_agent', 'RedditMonitor/1.0')
 
         if not all([client_id, client_secret, username, password]):
-            return jsonify({
-                'success': False,
-                'error': 'Missing required Reddit credentials'
-            }), 400
+            return jsonify({'success': False, 'error': 'Missing required Reddit credentials'}), 400
 
         valid, error = validate_reddit_credentials(client_id, client_secret, username, password, user_agent)
 
-        return jsonify({
-            'success': valid,
-            'error': error
-        })
+        return jsonify({'success': valid, 'error': error})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -581,10 +574,7 @@ def test_notification():
         notification_urls = creds.get('notification_urls', [])
 
         if not notification_urls:
-            return jsonify({
-                'success': False,
-                'error': 'No notification services configured'
-            }), 400
+            return jsonify({'success': False, 'error': 'No notification services configured'}), 400
 
         # Create Apprise instance and add all URLs
         apobj = apprise.Apprise()
@@ -594,17 +584,18 @@ def test_notification():
         # Send test notification
         result = apobj.notify(
             body="This is a test notification from Reddit Monitor. If you see this, notifications are working! 🎉",
-            title="🧪 Test Notification"
+            title="🧪 Test Notification",
         )
 
-        return jsonify({
-            'success': result,
-            'services_count': len(notification_urls),
-            'message': 'Test notification sent!' if result else 'Some notifications may have failed'
-        })
+        return jsonify(
+            {
+                'success': result,
+                'services_count': len(notification_urls),
+                'message': 'Test notification sent!' if result else 'Some notifications may have failed',
+            }
+        )
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
 
 
 if __name__ == '__main__':

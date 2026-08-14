@@ -1,4 +1,5 @@
 """RedditMonitor: evaluates a subreddit (or BST thread) against keyword/filter rules."""
+
 import logging
 import os
 import pickle
@@ -15,9 +16,20 @@ class RedditMonitor:
     _thread_cache = {}  # subreddit+pattern -> {thread_id, cached_at}
     THREAD_CACHE_TTL = 3600  # refresh cached thread ID every hour
 
-    def __init__(self, reddit, subreddit, keywords, min_upvotes=None, exclude_keywords=None,
-                 domain_contains=None, domain_excludes=None, flair_contains=None,
-                 author_includes=None, author_excludes=None, **kwargs):
+    def __init__(
+        self,
+        reddit,
+        subreddit,
+        keywords,
+        min_upvotes=None,
+        exclude_keywords=None,
+        domain_contains=None,
+        domain_excludes=None,
+        flair_contains=None,
+        author_includes=None,
+        author_excludes=None,
+        **kwargs,
+    ):
         self.reddit = reddit
         self.subreddit = subreddit
         self.keywords = keywords
@@ -107,7 +119,7 @@ class RedditMonitor:
         # Otherwise scan recent posts via the configured source chain.
         if not thread_id:
             posts, _ = sources.fetch_posts(self.subreddit, 25, self.reddit)
-            for post in (posts or []):
+            for post in posts or []:
                 if pattern in (post['title'] or '').lower():
                     if post.get('id'):
                         thread_id = post['id']
@@ -196,7 +208,7 @@ class RedditMonitor:
                 permalink=post['permalink'],
                 domain=post['domain'],
                 flair=post['link_flair_text'] or '',
-                author=post['author']
+                author=post['author'],
             )
 
         logging.info(f"Finished searching '{self.subreddit}' subreddit (source: {source}).")
@@ -208,11 +220,13 @@ class RedditMonitor:
             logging.debug(f"Skipping duplicate post: {title}")
             return False
 
-        message = f"Match found in '{self.subreddit}' subreddit:\n" \
-                  f"Title: {title}\n" \
-                  f"URL: {url}\n" \
-                  f"Upvotes: {score}\n" \
-                  f"Permalink: https://www.reddit.com{permalink}\n"
+        message = (
+            f"Match found in '{self.subreddit}' subreddit:\n"
+            f"Title: {title}\n"
+            f"URL: {url}\n"
+            f"Upvotes: {score}\n"
+            f"Permalink: https://www.reddit.com{permalink}\n"
+        )
 
         # Check filters
         title_lower = title.lower()
@@ -234,9 +248,16 @@ class RedditMonitor:
         meets_author_includes = not self.author_includes or author_name in [a.lower() for a in self.author_includes]
         meets_author_excludes = author_name not in [a.lower() for a in self.author_excludes]
 
-        if (has_all_keywords and not has_excluded and meets_upvotes and
-                meets_domain_contains and meets_domain_excludes and
-                meets_flair and meets_author_includes and meets_author_excludes):
+        if (
+            has_all_keywords
+            and not has_excluded
+            and meets_upvotes
+            and meets_domain_contains
+            and meets_domain_excludes
+            and meets_flair
+            and meets_author_includes
+            and meets_author_excludes
+        ):
             logging.info(message)
             self.send_push_notification(message)
             logging.info('-' * 40)

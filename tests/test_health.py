@@ -1,4 +1,5 @@
 """Tests for Uptime Kuma heartbeats (reddit_scraper.health)."""
+
 import time
 
 import pytest
@@ -20,7 +21,6 @@ def captured(monkeypatch):
 
 
 class TestOauthExpected:
-
     def test_true_when_app_creds_and_oauth_in_order(self):
         credentials.CREDENTIALS = {'reddit_client_id': 'a', 'reddit_client_secret': 'b'}
         config.set_source_order(['oauth', 'rss'])
@@ -38,7 +38,6 @@ class TestOauthExpected:
 
 
 class TestFallbackHeartbeat:
-
     def test_down_when_oauth_expected_but_on_fallback(self, captured, monkeypatch):
         monkeypatch.setenv('KUMA_FALLBACK_PUSH_URL', 'http://kuma/api/push/FB')
         credentials.CREDENTIALS = {'reddit_client_id': 'a', 'reddit_client_secret': 'b'}
@@ -57,7 +56,7 @@ class TestFallbackHeartbeat:
 
     def test_up_when_rss_is_intended(self, captured, monkeypatch):
         monkeypatch.setenv('KUMA_FALLBACK_PUSH_URL', 'http://kuma/api/push/FB')
-        credentials.CREDENTIALS = {}            # no app -> RSS is by configuration
+        credentials.CREDENTIALS = {}  # no app -> RSS is by configuration
         sources._state.active_source = 'rss'
         health.send_kuma_fallback_heartbeat()
         assert captured[0][1]['status'] == 'up'
@@ -68,7 +67,6 @@ class TestFallbackHeartbeat:
 
 
 class TestPrimaryHeartbeat:
-
     def test_up_on_recent_success(self, captured, monkeypatch):
         monkeypatch.setenv('KUMA_PUSH_URL', 'http://kuma/api/push/MAIN')
         sources._state.last_fetch_success_ts = time.time()

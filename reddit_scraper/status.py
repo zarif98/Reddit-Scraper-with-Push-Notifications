@@ -1,4 +1,5 @@
 """Bot status file written for the API/frontend to read."""
+
 import json
 import logging
 from datetime import datetime, timezone

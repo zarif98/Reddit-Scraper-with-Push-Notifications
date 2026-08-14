@@ -1,4 +1,5 @@
 """Pytest configuration and fixtures for Reddit Monitor tests."""
+
 import json
 import os
 import sys
@@ -88,7 +89,7 @@ def mock_json_response():
                         'link_flair_text': 'BUYING',
                         'author': 'buyer456',
                     }
-                }
+                },
             ]
         }
     }

@@ -1,4 +1,5 @@
 """Tests for thread comment monitoring functionality."""
+
 from unittest.mock import MagicMock
 
 import responses
@@ -7,13 +8,16 @@ import responses
 def make_comment_response(comments):
     """Build a Reddit-style JSON response for a thread with given comments."""
     children = [
-        {'kind': 't1', 'data': {
-            'id': c['id'],
-            'body': c['body'],
-            'author': c.get('author', 'testuser'),
-            'score': c.get('score', 1),
-            'permalink': c.get('permalink', f"/r/test/comments/thread/{c['id']}/"),
-        }}
+        {
+            'kind': 't1',
+            'data': {
+                'id': c['id'],
+                'body': c['body'],
+                'author': c.get('author', 'testuser'),
+                'score': c.get('score', 1),
+                'permalink': c.get('permalink', f"/r/test/comments/thread/{c['id']}/"),
+            },
+        }
         for c in comments
     ]
     return [
@@ -23,7 +27,6 @@ def make_comment_response(comments):
 
 
 class TestFetchThreadCommentsJson:
-
     @responses.activate
     def test_returns_top_level_comments(self):
         from bot import fetch_thread_comments_json
@@ -31,10 +34,12 @@ class TestFetchThreadCommentsJson:
         responses.add(
             responses.GET,
             'https://old.reddit.com/r/frugalmalefashion/comments/abc123.json',
-            json=make_comment_response([
-                {'id': 'c1', 'body': 'Size XS shirt $20', 'author': 'seller1'},
-                {'id': 'c2', 'body': 'Size L pants $30', 'author': 'seller2'},
-            ]),
+            json=make_comment_response(
+                [
+                    {'id': 'c1', 'body': 'Size XS shirt $20', 'author': 'seller1'},
+                    {'id': 'c2', 'body': 'Size L pants $30', 'author': 'seller2'},
+                ]
+            ),
             status=200,
         )
 
@@ -106,10 +111,11 @@ class TestFetchThreadCommentsJson:
 
 
 class TestProcessComment:
-
-    def _make_monitor(self, keywords, keyword_logic='any', exclude_keywords=None,
-                      author_includes=None, author_excludes=None):
+    def _make_monitor(
+        self, keywords, keyword_logic='any', exclude_keywords=None, author_includes=None, author_excludes=None
+    ):
         from bot import RedditMonitor
+
         monitor = RedditMonitor.__new__(RedditMonitor)
         monitor.subreddit = 'frugalmalefashion'
         monitor.keywords = keywords
@@ -179,7 +185,6 @@ class TestProcessComment:
 
 
 class TestFindCurrentThread:
-
     @responses.activate
     def test_finds_thread_by_title_pattern_via_json(self):
         from bot import RedditMonitor
@@ -191,20 +196,36 @@ class TestFindCurrentThread:
         responses.add(
             responses.GET,
             'https://old.reddit.com/r/frugalmalefashion/new.json',
-            json={'data': {'children': [
-                {'data': {
-                    'id': 'thread1',
-                    'title': 'Official Weekly Buy/Sell/Trade Thread',
-                    'permalink': '/r/frugalmalefashion/comments/thread1/official_weekly/',
-                    'url': '', 'score': 1, 'domain': '', 'link_flair_text': '', 'author': 'mod',
-                }},
-                {'data': {
-                    'id': 'post2',
-                    'title': 'Cool jacket deal',
-                    'permalink': '/r/frugalmalefashion/comments/post2/cool_jacket/',
-                    'url': '', 'score': 5, 'domain': '', 'link_flair_text': '', 'author': 'user',
-                }},
-            ]}},
+            json={
+                'data': {
+                    'children': [
+                        {
+                            'data': {
+                                'id': 'thread1',
+                                'title': 'Official Weekly Buy/Sell/Trade Thread',
+                                'permalink': '/r/frugalmalefashion/comments/thread1/official_weekly/',
+                                'url': '',
+                                'score': 1,
+                                'domain': '',
+                                'link_flair_text': '',
+                                'author': 'mod',
+                            }
+                        },
+                        {
+                            'data': {
+                                'id': 'post2',
+                                'title': 'Cool jacket deal',
+                                'permalink': '/r/frugalmalefashion/comments/post2/cool_jacket/',
+                                'url': '',
+                                'score': 5,
+                                'domain': '',
+                                'link_flair_text': '',
+                                'author': 'user',
+                            }
+                        },
+                    ]
+                }
+            },
             status=200,
         )
 

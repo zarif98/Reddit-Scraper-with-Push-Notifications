@@ -1,4 +1,5 @@
 """Credential loading, sanitization, encoding checks, and PRAW authentication."""
+
 import json
 import logging
 import os
@@ -95,16 +96,16 @@ def check_credential_encoding(creds):
     """
     global CREDENTIAL_WARNING
     offenders = []
-    for key in ('reddit_client_id', 'reddit_client_secret', 'reddit_user_agent',
-                'reddit_username', 'reddit_password'):
+    for key in ('reddit_client_id', 'reddit_client_secret', 'reddit_user_agent', 'reddit_username', 'reddit_password'):
         bad = [i for i, _ in find_non_ascii(creds.get(key))]
         if bad:
             offenders.append(f"{key} (positions {bad})")
 
     if offenders:
         CREDENTIAL_WARNING = (
-            "Non-ASCII characters detected in: " + "; ".join(offenders) +
-            ". This usually means a credential was pasted with a lookalike character "
+            "Non-ASCII characters detected in: "
+            + "; ".join(offenders)
+            + ". This usually means a credential was pasted with a lookalike character "
             "(e.g. Cyrillic 'І' for Latin 'I') and will cause a 401 / fall back to RSS. "
             "Re-copy the affected credential from https://www.reddit.com/prefs/apps."
         )
@@ -129,6 +130,7 @@ def detect_auth_capability():
     # the sources -> notifications -> credentials import cycle). Env var still works on its
     # own; this lets the key be set via the UI/credentials file too.
     from . import sources
+
     sources.SYLVIA_API_KEY = CREDENTIALS.get('sylvia_api_key')
     if CREDENTIALS.get('sylvia_api_key'):
         logging.info("🛰️  Sylvia gateway key configured (source 'sylvia' available if in the order).")
@@ -172,15 +174,15 @@ def authenticate_reddit():
 
     if username and password:
         logging.info("Authenticating Reddit (full OAuth)...")
-        return praw.Reddit(client_id=client_id,
-                           client_secret=client_secret,
-                           user_agent=user_agent,
-                           username=username,
-                           password=password)
+        return praw.Reddit(
+            client_id=client_id,
+            client_secret=client_secret,
+            user_agent=user_agent,
+            username=username,
+            password=password,
+        )
 
     logging.info("Authenticating Reddit (read-only, app-only)...")
-    reddit = praw.Reddit(client_id=client_id,
-                         client_secret=client_secret,
-                         user_agent=user_agent)
+    reddit = praw.Reddit(client_id=client_id, client_secret=client_secret, user_agent=user_agent)
     reddit.read_only = True
     return reddit

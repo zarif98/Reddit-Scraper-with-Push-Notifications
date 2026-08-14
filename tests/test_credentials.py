@@ -1,4 +1,5 @@
 """Tests for credential validation in api.py."""
+
 from unittest.mock import patch
 
 
@@ -15,7 +16,7 @@ class TestCredentialValidation:
             client_secret='IaYQJWІRqNCg',  # Contains Cyrillic І at position 6
             username='testuser',
             password='testpass',
-            user_agent='TestAgent/1.0'
+            user_agent='TestAgent/1.0',
         )
 
         assert success is False
@@ -31,7 +32,7 @@ class TestCredentialValidation:
             client_secret='testsecret',
             username='testuser',
             password='testpass',
-            user_agent='TestAgent/1.0'
+            user_agent='TestAgent/1.0',
         )
 
         assert success is False
@@ -50,7 +51,7 @@ class TestCredentialValidation:
                 client_secret='validascii456',
                 username='testuser',
                 password='testpass',
-                user_agent='TestAgent/1.0'
+                user_agent='TestAgent/1.0',
             )
 
             # Should fail due to OAuth, not ASCII check

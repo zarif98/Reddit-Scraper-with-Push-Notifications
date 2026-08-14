@@ -2,6 +2,7 @@
 
 Wiring + main loop only; the implementation lives in the reddit_scraper package.
 """
+
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -83,7 +84,7 @@ def main():
         current_creds_mtime = config.get_credentials_mtime()
         if current_creds_mtime != last_creds_mtime:
             logging.info("Credentials changed, reloading...")
-            credentials.detect_auth_capability()   # re-bridges the Sylvia key into sources
+            credentials.detect_auth_capability()  # re-bridges the Sylvia key into sources
             reddit = credentials.authenticate_reddit()  # pick up new/changed Reddit app creds
             last_creds_mtime = current_creds_mtime
 
@@ -105,11 +106,15 @@ def main():
             if time_since_last_run >= refresh_interval:
                 monitors_to_run.append(monitor)
                 last_run_times[monitor_id] = current_time
-                logging.info(f"Running monitor: {monitor.get('name', monitor.get('subreddit'))} "
-                             f"(interval: {monitor.get('cooldown_minutes', 10)} min)")
+                logging.info(
+                    f"Running monitor: {monitor.get('name', monitor.get('subreddit'))} "
+                    f"(interval: {monitor.get('cooldown_minutes', 10)} min)"
+                )
             else:
                 time_remaining = int((refresh_interval - time_since_last_run) / 60)
-                logging.debug(f"Skipping {monitor.get('name', monitor.get('subreddit'))} - {time_remaining} min until next run")
+                logging.debug(
+                    f"Skipping {monitor.get('name', monitor.get('subreddit'))} - {time_remaining} min until next run"
+                )
 
         if monitors_to_run:
             with ThreadPoolExecutor() as executor:

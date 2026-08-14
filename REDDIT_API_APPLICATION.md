@@ -167,7 +167,7 @@ return praw.Reddit(
     client_secret=client_secret,
     user_agent=user_agent,  # e.g., "RedditMonitor/1.0 by /u/username"
     username=username,
-    password=password
+    password=password,
 )
 ```
 

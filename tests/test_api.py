@@ -1,4 +1,5 @@
 """Unit tests for api.py functionality."""
+
 import json
 import os
 import tempfile
@@ -29,6 +30,7 @@ class TestAPIEndpoints:
                 import importlib
 
                 import api
+
                 importlib.reload(api)
 
                 api.app.config['TESTING'] = True
@@ -52,9 +54,7 @@ class TestAPIEndpoints:
             'enabled': True,
         }
 
-        response = client.post('/api/monitors',
-                               data=json.dumps(monitor_data),
-                               content_type='application/json')
+        response = client.post('/api/monitors', data=json.dumps(monitor_data), content_type='application/json')
 
         assert response.status_code == 201
         data = response.get_json()
@@ -70,9 +70,7 @@ class TestAPIEndpoints:
             'keywords': ['4090'],
             'name': 'GPU Hunt',
         }
-        create_response = client.post('/api/monitors',
-                                      data=json.dumps(monitor_data),
-                                      content_type='application/json')
+        create_response = client.post('/api/monitors', data=json.dumps(monitor_data), content_type='application/json')
         monitor_id = create_response.get_json()['id']
 
         # Update it
@@ -80,9 +78,9 @@ class TestAPIEndpoints:
             'name': 'GPU Hunt Updated',
             'keywords': ['4090', '4080', '3090'],
         }
-        response = client.put(f'/api/monitors/{monitor_id}',
-                              data=json.dumps(update_data),
-                              content_type='application/json')
+        response = client.put(
+            f'/api/monitors/{monitor_id}', data=json.dumps(update_data), content_type='application/json'
+        )
 
         assert response.status_code == 200
         data = response.get_json()
@@ -96,9 +94,7 @@ class TestAPIEndpoints:
             'subreddit': 'hardwareswap',
             'keywords': ['4090'],
         }
-        create_response = client.post('/api/monitors',
-                                      data=json.dumps(monitor_data),
-                                      content_type='application/json')
+        create_response = client.post('/api/monitors', data=json.dumps(monitor_data), content_type='application/json')
         monitor_id = create_response.get_json()['id']
 
         # Delete it
@@ -129,14 +125,18 @@ class TestCredentialsAPI:
                 with open(config_path, 'w') as f:
                     json.dump({'subreddits_to_search': []}, f)
                 with open(creds_path, 'w') as f:
-                    json.dump({
-                        'reddit_client_id': 'testid123',
-                        'reddit_client_secret': 'testsecret456',
-                    }, f)
+                    json.dump(
+                        {
+                            'reddit_client_id': 'testid123',
+                            'reddit_client_secret': 'testsecret456',
+                        },
+                        f,
+                    )
 
                 import importlib
 
                 import api
+
                 importlib.reload(api)
 
                 api.app.config['TESTING'] = True

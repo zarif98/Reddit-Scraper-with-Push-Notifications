@@ -1,4 +1,5 @@
 """Tests for post filtering in RedditMonitor._process_post (reddit_scraper.monitor)."""
+
 from unittest.mock import MagicMock
 
 from reddit_scraper.monitor import RedditMonitor
@@ -22,14 +23,22 @@ def make_monitor(keywords=('4090',), **overrides):
     return m
 
 
-def process(m, *, post_id='p1', title='RTX 4090 for sale', score=50,
-            domain='ebay.com', flair='SELLING', author='seller1'):
-    return m._process_post(post_id=post_id, title=title, url='http://x', score=score,
-                           permalink='/r/x/p1/', domain=domain, flair=flair, author=author)
+def process(
+    m, *, post_id='p1', title='RTX 4090 for sale', score=50, domain='ebay.com', flair='SELLING', author='seller1'
+):
+    return m._process_post(
+        post_id=post_id,
+        title=title,
+        url='http://x',
+        score=score,
+        permalink='/r/x/p1/',
+        domain=domain,
+        flair=flair,
+        author=author,
+    )
 
 
 class TestProcessPost:
-
     def test_basic_match_notifies(self):
         m = make_monitor()
         assert process(m) is True

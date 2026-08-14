@@ -3,6 +3,7 @@
 bot.py no longer does blocking/auth work at import time (the data-source helpers
 live in the reddit_scraper package and are re-exported by bot), so these run normally.
 """
+
 import responses
 
 
@@ -18,7 +19,7 @@ class TestFetchPostsJson:
             responses.GET,
             'https://old.reddit.com/r/hardwareswap/new.json?limit=10',
             json=mock_json_response,
-            status=200
+            status=200,
         )
 
         posts = fetch_posts_json('hardwareswap', limit=10)
@@ -35,11 +36,7 @@ class TestFetchPostsJson:
         """Test handling of rate limit (429) response."""
         from bot import fetch_posts_json
 
-        responses.add(
-            responses.GET,
-            'https://old.reddit.com/r/hardwareswap/new.json?limit=10',
-            status=429
-        )
+        responses.add(responses.GET, 'https://old.reddit.com/r/hardwareswap/new.json?limit=10', status=429)
 
         posts = fetch_posts_json('hardwareswap', limit=10)
         assert posts is None
@@ -49,11 +46,7 @@ class TestFetchPostsJson:
         """Test handling of forbidden (403) response."""
         from bot import fetch_posts_json
 
-        responses.add(
-            responses.GET,
-            'https://old.reddit.com/r/hardwareswap/new.json?limit=10',
-            status=403
-        )
+        responses.add(responses.GET, 'https://old.reddit.com/r/hardwareswap/new.json?limit=10', status=403)
 
         posts = fetch_posts_json('hardwareswap', limit=10)
         assert posts is None

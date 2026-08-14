@@ -3,18 +3,31 @@
 Paths are resolved from the DATA_DIR env var at call time (not captured at import)
 so tests can repoint DATA_DIR and reload entrypoints without stale paths.
 """
+
 import json
 import logging
 import os
 import uuid
 
 DEFAULT_COLORS = [
-    '#8B5CF6', '#3B82F6', '#22C55E', '#EF4444',
-    '#F97316', '#EC4899', '#06B6D4', '#EAB308',
+    '#8B5CF6',
+    '#3B82F6',
+    '#22C55E',
+    '#EF4444',
+    '#F97316',
+    '#EC4899',
+    '#06B6D4',
+    '#EAB308',
 ]
 
-OPTIONAL_LIST_FIELDS = ['exclude_keywords', 'domain_contains', 'domain_excludes',
-                        'flair_contains', 'author_includes', 'author_excludes']
+OPTIONAL_LIST_FIELDS = [
+    'exclude_keywords',
+    'domain_contains',
+    'domain_excludes',
+    'flair_contains',
+    'author_includes',
+    'author_excludes',
+]
 
 # Data-source pathways, tried in order by the dispatcher:
 #   'oauth'  - authenticated PRAW API (full login OR app-only read-only). Richest + unblocked.
