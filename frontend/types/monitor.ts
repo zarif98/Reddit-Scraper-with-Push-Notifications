@@ -17,6 +17,8 @@ export interface Monitor {
     author_excludes: string[];
 }
 
+// MUST stay in sync with DEFAULT_COLORS in reddit_scraper/config.py (backend auto-assigns
+// from that list on create; this is the picker) — keep the two lists identical.
 export const DEFAULT_COLORS = [
     '#8B5CF6', // Purple
     '#3B82F6', // Blue

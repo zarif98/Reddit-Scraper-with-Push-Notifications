@@ -60,6 +60,31 @@ Frontend: `npm run lint` / `npm run build` in `frontend/`.
 - **Centralize shared access** — paths/config through `config.py`, credentials through
   `credentials.py`. Don't re-read env vars or files that a helper already owns.
 
+### Single source of truth (avoid cross-layer coupling)
+
+The bot, the API, and the frontend must not each encode the same domain knowledge — when they
+drift, you get bugs like "Sylvia shown as a fallback." Rules, in priority order:
+
+1. **Define a decision once, in `config.py`, and derive everywhere.** Source topology lives
+   there and nowhere else: `VALID_SOURCES`, `DEFAULT_SOURCE_ORDER`, `RICH_SOURCES` /
+   `supports_rich_filters()`, `SOURCE_ORDER_PRESETS`. The bot, `api.py`, and tests all import
+   these — adding a source in one place keeps them in agreement. Don't hardcode a parallel
+   copy (the earlier `api.py` `('oauth','rss','json')` list is the anti-pattern).
+2. **The backend owns business decisions; the frontend consumes API values — it never
+   re-derives them.** The UI reads flags like `rich_filters_supported` and
+   `using_json_fallback` from `/api/status` and renders them. It must **not** re-compute a
+   decision from raw fields (e.g. `activeSource in ('rss','json')` is banned — that logic
+   belongs in the backend, keyed off `RICH_SOURCES`).
+3. **Constants that genuinely must be mirrored across Python↔TypeScript** (no shared schema,
+   and codegen would be overkill here) — e.g. the monitor color palette (`DEFAULT_COLORS` in
+   `config.py` ↔ `frontend/types/monitor.ts`) and monitor field defaults (`clean_monitor` ↔
+   `DEFAULT_MONITOR`) — are the **only** acceptable duplication. Each copy must carry a
+   `MUST stay in sync with <path>` comment, and you change both together.
+
+Rule of thumb: if changing a rule means editing more than one file *and* those files can't see
+each other's value, you've coupled them — hoist the value into `config.py` (backend) or expose
+it through the API (frontend).
+
 ### Error handling
 
 - **Fetchers signal blocking by raising, transient/empty by returning `None`.** RSS/JSON/Sylvia

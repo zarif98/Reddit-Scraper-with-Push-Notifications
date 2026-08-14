@@ -505,15 +505,6 @@ def update_credentials():
         return jsonify({'error': str(e)}), 500
 
 
-# Which data source the UI dropdown selects, mapped to the bot's source order.
-# The free json/rss pathways are kept as a last-ditch fallback behind the chosen
-# primary so a blocked primary still degrades gracefully rather than going dark.
-SOURCE_PRESETS = {
-    'reddit': ['oauth', 'json', 'rss'],
-    'sylvia': ['sylvia', 'json', 'rss'],
-}
-
-
 @app.route('/api/source-order', methods=['GET'])
 def get_source_order():
     """Report the active data source (derived from the primary of the saved source order)."""
@@ -533,13 +524,14 @@ def update_source_order():
     try:
         data = request.get_json() or {}
         active = data.get('active_source')
-        if active not in SOURCE_PRESETS:
-            return jsonify({'error': f"active_source must be one of {list(SOURCE_PRESETS)}"}), 400
+        presets = rs_config.SOURCE_ORDER_PRESETS
+        if active not in presets:
+            return jsonify({'error': f"active_source must be one of {list(presets)}"}), 400
 
         config = load_config() or {}
-        config['source_order'] = SOURCE_PRESETS[active]
+        config['source_order'] = presets[active]
         save_config(config)
-        return jsonify({'success': True, 'active_source': active, 'source_order': SOURCE_PRESETS[active]})
+        return jsonify({'success': True, 'active_source': active, 'source_order': presets[active]})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

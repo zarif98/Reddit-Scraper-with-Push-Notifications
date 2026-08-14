@@ -9,15 +9,19 @@ import logging
 import os
 import uuid
 
+# Monitor color palette (used to auto-assign a color on create). MUST stay in sync with the
+# frontend picker in frontend/types/monitor.ts — keep the two lists identical.
 DEFAULT_COLORS = [
-    '#8B5CF6',
-    '#3B82F6',
-    '#22C55E',
-    '#EF4444',
-    '#F97316',
-    '#EC4899',
-    '#06B6D4',
-    '#EAB308',
+    '#8B5CF6',  # Purple
+    '#3B82F6',  # Blue
+    '#22C55E',  # Green
+    '#EF4444',  # Red
+    '#F97316',  # Orange
+    '#EC4899',  # Pink
+    '#06B6D4',  # Cyan
+    '#EAB308',  # Yellow
+    '#10B981',  # Emerald
+    '#F43F5E',  # Rose
 ]
 
 OPTIONAL_LIST_FIELDS = [
@@ -55,6 +59,15 @@ def supports_rich_filters(source):
     """True if `source` provides score/domain (so upvote/domain filters apply and it's not
     a degraded fallback for UI purposes). See RICH_SOURCES."""
     return source in RICH_SOURCES
+
+
+# The UI's data-source picker maps a chosen primary to a full source order. The free json/rss
+# pathways stay as a last-ditch fallback behind the primary so a blocked primary degrades
+# gracefully. Lives here (not in api.py) so all source-topology knowledge is in one module.
+SOURCE_ORDER_PRESETS = {
+    'reddit': ['oauth', 'json', 'rss'],
+    'sylvia': ['sylvia', 'json', 'rss'],
+}
 
 
 # --- Paths (call-time, env-aware) ---
