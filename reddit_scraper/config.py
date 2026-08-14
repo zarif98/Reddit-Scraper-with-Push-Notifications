@@ -42,6 +42,20 @@ OPTIONAL_LIST_FIELDS = [
 VALID_SOURCES = ('oauth', 'rss', 'json', 'sylvia')
 DEFAULT_SOURCE_ORDER = ['oauth', 'json', 'rss']
 
+# The single source of truth for "does this source provide score/domain data and count as a
+# healthy primary (not a degradation)?" Everything that needs that distinction derives from
+# here: the bot's fallback flag (sources._SourceState.set_active_source), the API's
+# rich_filters_supported (api.get_source_capability), and the UI banner/filter gating. Add a
+# new rich source here and all three stay in agreement. `json` returns score/domain too but
+# is an unofficial, frequently-blocked fallback, so it is deliberately not counted rich.
+RICH_SOURCES = ('oauth', 'sylvia')
+
+
+def supports_rich_filters(source):
+    """True if `source` provides score/domain (so upvote/domain filters apply and it's not
+    a degraded fallback for UI purposes). See RICH_SOURCES."""
+    return source in RICH_SOURCES
+
 
 # --- Paths (call-time, env-aware) ---
 def get_data_dir():
