@@ -19,7 +19,8 @@ A self-hosted Reddit monitoring bot with a modern web UI. Get instant notificati
 - **🔔 80+ Notification Services** - Discord, Slack, Telegram, Pushover, ntfy, Email, and more via [Apprise](https://github.com/caronc/apprise)
 - **⏱️ Per-Monitor Refresh** - Each monitor can have its own check interval (1 min to 1 hour)
 - **🎯 Advanced Filters** - Keywords, exclusions, domain filters, flair filters, author filters
-- **🛟 Resilient Fetching** - Falls through multiple data sources (authenticated API → RSS → JSON) so it keeps working even when Reddit blocks anonymous access
+- **🛟 Resilient Fetching** - Falls through multiple data sources (authenticated API → optional Sylvia gateway → JSON → RSS) so it keeps working even when Reddit blocks anonymous access
+- **🕶️ IP Hiding** - Optionally route anonymous fetches through a proxy/pool, or use the Sylvia gateway, so requests aren't all made from one flagged IP
 - **🔓 Credentials Optional** - Runs on the public RSS feed with no Reddit app at all; add an app for full filtering and higher limits
 - **📟 Uptime Kuma Ready** - Optional push heartbeats report real health (not just "container running") and flag fallback degradation
 - **🐳 Docker Ready** - Easy deployment with Docker Compose
@@ -146,7 +147,7 @@ Each monitor supports these options:
 | `enabled` | Active/inactive toggle | `true` |
 | `color` | UI card color | Auto-assigned |
 
-> ⚠️ **Score and domain filters require the authenticated API.** The RSS pathway doesn't expose upvotes or the external domain, so `min_upvotes`, `domain_contains`, and `domain_excludes` are not applied while running on RSS (they fail safe — no false notifications). The web UI hides these fields when no Reddit app is configured.
+> ⚠️ **Score and domain filters require a full-data source** (the authenticated API or the Sylvia gateway). The RSS pathway doesn't expose upvotes or the external domain, so `min_upvotes`, `domain_contains`, and `domain_excludes` are not applied while running on RSS (they fail safe — no false notifications). The web UI hides these fields unless a source that provides them is configured.
 
 ### Example search.json
 
@@ -275,6 +276,7 @@ The bot fetches posts/comments through an ordered chain of sources, trying each 
 | Source | Auth | Notes |
 |--------|------|-------|
 | `oauth` | Reddit app | Authenticated API (full login **or** read-only app-only). Unblocked, 100 req/min, full post data. |
+| `sylvia` | API key | Third-party [Sylvia gateway](https://sylvia-api.com) that fetches from **its own IP** (so it doubles as IP hiding) and returns **full post data (score, domain, flair)**. Paid per request, so **opt-in**: skipped unless `SYLVIA_API_KEY` is set. |
 | `json` | None | `old.reddit.com/.../new.json`. Often blocked by Reddit now, but when it works it returns **full post data (score, domain, flair)** — so it's preferred over RSS. |
 | `rss` | None | `www.reddit.com/r/<sub>/new/.rss`. Works without credentials but is per-IP rate-limited (throttled) and has **no score/domain** (see filter note above). |
 
@@ -282,16 +284,18 @@ Duplicate/concurrent requests for the same subreddit (or thread) are **coalesced
 
 ### Configuring the order
 
-Default is `oauth → json → rss` (JSON before RSS because it returns richer data when available). Override per deployment via `search.json`:
+The simplest way is the web UI: **Settings → Data Source** lets you pick **Reddit API** or **Sylvia Gateway**, which writes the source order (with the free RSS/JSON feeds kept as a fallback behind your choice) and takes effect live — no restart.
+
+Default is `oauth → json → rss` (JSON before RSS because it returns richer data when available). To set it manually, override per deployment via `search.json`:
 
 ```json
 {
-    "source_order": ["oauth", "json", "rss"],
+    "source_order": ["oauth", "sylvia", "json", "rss"],
     "subreddits_to_search": [ ... ]
 }
 ```
 
-…or with the `REDDIT_SOURCE_ORDER=oauth,json,rss` environment variable (`search.json` takes precedence).
+…or with the `REDDIT_SOURCE_ORDER=oauth,json,rss` environment variable (`search.json` — and therefore the UI picker — takes precedence).
 
 ### Environment variables
 
@@ -303,6 +307,10 @@ Default is `oauth → json → rss` (JSON before RSS because it returns richer d
 | `SOURCE_COOLDOWN_MAX_SECONDS` | `3600` | Cap on the exponential backoff cooldown |
 | `FETCH_CACHE_TTL_SECONDS` | `90` | How long a fetched result is shared across duplicate monitors |
 | `RSS_USER_AGENT` | (browser UA) | Override the User-Agent used for RSS requests |
+| `SYLVIA_API_KEY` | — | API key for the `sylvia` source (also settable in the UI). Blank → source disabled |
+| `REDDIT_PROXY` | — | Route the anonymous RSS/JSON requests through a single proxy (IP hiding); blank → direct |
+| `REDDIT_PROXIES` | — | Comma-separated proxy pool, rotated per request (takes precedence over `REDDIT_PROXY`) |
+| `PROXY_COOLDOWN_SECONDS` | `120` | How long to skip a proxy after it fails to connect |
 | `KUMA_PUSH_URL` | — | Uptime Kuma Push URL for the primary health heartbeat |
 | `KUMA_FETCH_STALE_SECONDS` | `1500` | Seconds without a successful fetch before reporting DOWN |
 | `KUMA_FALLBACK_PUSH_URL` | — | Optional second Push URL that flags `oauth → fallback` degradation |

@@ -65,11 +65,15 @@ def get_source_capability():
     client_secret = creds.get('reddit_client_secret') or os.getenv('REDDIT_CLIENT_SECRET')
     oauth_available = bool(client_id and client_secret) and 'oauth' in order
 
+    sylvia_key = creds.get('sylvia_api_key') or os.getenv('SYLVIA_API_KEY')
+    sylvia_available = bool(sylvia_key) and 'sylvia' in order
+
     return {
         'source_order': order,
         'oauth_available': oauth_available,
-        # score and domain are only available through the authenticated API
-        'rich_filters_supported': oauth_available,
+        # score/domain need a full-data source: the authenticated API or the Sylvia
+        # gateway both expose them; RSS does not (so filters can't be applied there).
+        'rich_filters_supported': oauth_available or sylvia_available,
     }
 
 

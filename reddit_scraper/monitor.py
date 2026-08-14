@@ -104,7 +104,7 @@ class RedditMonitor:
             except Exception as e:
                 logging.warning(f"PRAW error finding sticky BST thread: {e}")
 
-        # Otherwise scan recent posts via the source chain (oauth -> rss -> json).
+        # Otherwise scan recent posts via the configured source chain.
         if not thread_id:
             posts, _ = sources.fetch_posts(self.subreddit, 25, self.reddit)
             for post in (posts or []):

@@ -181,3 +181,12 @@ class TestCredentialsAPI:
         """An unknown source is rejected with 400."""
         response = client.put('/api/source-order', json={'active_source': 'nope'})
         assert response.status_code == 400
+
+    def test_sylvia_enables_rich_filters(self, client):
+        """On Sylvia (with a key), score/domain filters are reported as supported,
+        even without a Reddit app — Sylvia returns full post data."""
+        client.put('/api/source-order', json={'active_source': 'sylvia'})
+        client.put('/api/credentials', json={'sylvia_api_key': 'syl_test'})
+        status = client.get('/api/status').get_json()
+        assert status['rich_filters_supported'] is True
+        assert status['oauth_available'] is False  # no Reddit app configured

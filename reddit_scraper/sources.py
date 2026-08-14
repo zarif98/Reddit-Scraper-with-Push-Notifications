@@ -513,7 +513,7 @@ def fetch_thread_comments(subreddit, thread_id, reddit):
 
 
 def _fetch_thread_comments_impl(subreddit, thread_id, reddit):
-    """Fetch a thread's comments through the configured source chain (oauth -> rss -> json)."""
+    """Fetch a thread's comments through the configured source chain (see config.get_source_order)."""
     for source in config.get_source_order():
         if not _source_available(source):
             continue
