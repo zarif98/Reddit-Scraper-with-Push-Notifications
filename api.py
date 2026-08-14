@@ -383,18 +383,30 @@ def mask_value(value):
     return value[:4] + '••••••••'
 
 
+def is_masked(value):
+    """True if value is empty or a masked placeholder, so it must not overwrite stored data."""
+    return not value or '••••' in value
+
+
+def resolve_credential(data, creds, key):
+    """Pick an incoming credential value, falling back to the stored one when the incoming
+    value is missing or still masked (the UI sends masked placeholders for untouched fields)."""
+    incoming = data.get(key)
+    return incoming if not is_masked(incoming) else creds.get(key, '')
+
+
 def validate_reddit_credentials(client_id, client_secret, username, password, user_agent):
     """Validate Reddit API credentials by attempting authentication.
     
     Returns (success: bool, error_message: str or None)
     """
     # First, check for non-ASCII characters
-    for name, value in [('client_id', client_id), ('client_secret', client_secret), 
+    for name, value in [('client_id', client_id), ('client_secret', client_secret),
                         ('username', username), ('password', password), ('user_agent', user_agent)]:
-        if value:
-            non_ascii = [(i, c, hex(ord(c))) for i, c in enumerate(value) if ord(c) > 127]
-            if non_ascii:
-                return False, f"Non-ASCII character found in {name} at position {non_ascii[0][0]}: '{non_ascii[0][1]}' ({non_ascii[0][2]}). Please re-type the credential."
+        non_ascii = rs_credentials.find_non_ascii(value)
+        if non_ascii:
+            i, c = non_ascii[0]
+            return False, f"Non-ASCII character found in {name} at position {i}: '{c}' ({hex(ord(c))}). Please re-type the credential."
     
     # Try to authenticate with Reddit
     try:
@@ -451,11 +463,8 @@ def update_credentials():
                   'reddit_password', 'reddit_user_agent', 'sylvia_api_key']
         
         for field in fields:
-            if field in data:
-                value = data[field]
-                # Don't save masked values
-                if value and '••••' not in value:
-                    creds[field] = value
+            if field in data and not is_masked(data[field]):
+                creds[field] = data[field]
         
         # Handle notification_urls array
         if 'notification_urls' in data:
@@ -538,11 +547,11 @@ def test_reddit_credentials():
         data = request.get_json()
         creds = load_credentials()
         
-        # Use provided values or fall back to stored ones
-        client_id = data.get('reddit_client_id') if data.get('reddit_client_id') and '••••' not in data.get('reddit_client_id', '') else creds.get('reddit_client_id', '')
-        client_secret = data.get('reddit_client_secret') if data.get('reddit_client_secret') and '••••' not in data.get('reddit_client_secret', '') else creds.get('reddit_client_secret', '')
-        username = data.get('reddit_username') if data.get('reddit_username') and '••••' not in data.get('reddit_username', '') else creds.get('reddit_username', '')
-        password = data.get('reddit_password') if data.get('reddit_password') and '••••' not in data.get('reddit_password', '') else creds.get('reddit_password', '')
+        # Use provided values or fall back to stored ones (masked = untouched)
+        client_id = resolve_credential(data, creds, 'reddit_client_id')
+        client_secret = resolve_credential(data, creds, 'reddit_client_secret')
+        username = resolve_credential(data, creds, 'reddit_username')
+        password = resolve_credential(data, creds, 'reddit_password')
         user_agent = data.get('reddit_user_agent') or creds.get('reddit_user_agent', 'RedditMonitor/1.0')
         
         if not all([client_id, client_secret, username, password]):

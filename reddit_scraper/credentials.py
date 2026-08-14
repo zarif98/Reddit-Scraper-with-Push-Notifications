@@ -65,13 +65,22 @@ def load_credentials():
     }
 
 
+def find_non_ascii(value):
+    """Return [(index, char), ...] for every non-ASCII character in value (empty if clean).
+
+    Reddit credentials are always ASCII, so any hit here is a red flag — typically a
+    lookalike character (e.g. a Cyrillic 'І' pasted for a Latin 'I') that would fail auth.
+    """
+    return [(i, c) for i, c in enumerate(value or '') if ord(c) > 127]
+
+
 def sanitize_credential(value, name):
     """Remove non-ASCII characters from credentials that cause latin-1 encoding errors."""
     if not value:
         return value
     sanitized = value.encode('ascii', 'ignore').decode('ascii')
     if value != sanitized:
-        positions = [i for i, c in enumerate(value) if ord(c) > 127]
+        positions = [i for i, _ in find_non_ascii(value)]
         logging.warning(f"⚠️ Removed non-ASCII characters from {name}: found Unicode at positions {positions}")
     return sanitized
 
@@ -88,8 +97,7 @@ def check_credential_encoding(creds):
     offenders = []
     for key in ('reddit_client_id', 'reddit_client_secret', 'reddit_user_agent',
                 'reddit_username', 'reddit_password'):
-        value = creds.get(key) or ''
-        bad = [i for i, c in enumerate(value) if ord(c) > 127]
+        bad = [i for i, _ in find_non_ascii(creds.get(key))]
         if bad:
             offenders.append(f"{key} (positions {bad})")
 

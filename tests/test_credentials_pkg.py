@@ -14,6 +14,18 @@ def restore_state():
     credentials.CREDENTIAL_WARNING = saved_warning
 
 
+class TestFindNonAscii:
+
+    def test_flags_position_and_char(self):
+        hits = credentials.find_non_ascii('IaYQJWІRqNCg')  # Cyrillic І at index 6
+        assert hits == [(6, 'І')]
+
+    def test_clean_and_empty_are_empty(self):
+        assert credentials.find_non_ascii('plain-ascii') == []
+        assert credentials.find_non_ascii('') == []
+        assert credentials.find_non_ascii(None) == []
+
+
 class TestCheckCredentialEncoding:
 
     def test_detects_cyrillic_lookalike(self):
