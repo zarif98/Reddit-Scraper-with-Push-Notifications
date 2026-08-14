@@ -56,6 +56,7 @@ def main():
     subreddits_to_search = cfg.get('subreddits_to_search', [])
     config.apply_source_order_from_config(cfg)
     last_config_mtime = config.get_config_mtime()
+    last_creds_mtime = config.get_credentials_mtime()
 
     # Track last run time for each monitor by ID
     last_run_times = {}
@@ -75,6 +76,15 @@ def main():
                 logging.info("Configuration reloaded successfully.")
             else:
                 logging.warning("Failed to reload configuration, using previous settings.")
+
+        # Reload credentials when credentials.json changes (e.g. a Sylvia key or Reddit
+        # app entered via the UI) so new keys take effect without restarting the bot.
+        current_creds_mtime = config.get_credentials_mtime()
+        if current_creds_mtime != last_creds_mtime:
+            logging.info("Credentials changed, reloading...")
+            credentials.detect_auth_capability()   # re-bridges the Sylvia key into sources
+            reddit = credentials.authenticate_reddit()  # pick up new/changed Reddit app creds
+            last_creds_mtime = current_creds_mtime
 
         # Filter to only enabled monitors
         enabled_monitors = [m for m in subreddits_to_search if m.get('enabled', True)]

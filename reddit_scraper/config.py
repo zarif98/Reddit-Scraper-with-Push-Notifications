@@ -74,6 +74,13 @@ def get_config_mtime():
         return None
 
 
+def get_credentials_mtime():
+    try:
+        return os.path.getmtime(get_credentials_path())
+    except OSError:
+        return None
+
+
 def save_config(config):
     with open(get_config_path(), 'w') as f:
         json.dump(config, f, indent=4)
