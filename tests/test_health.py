@@ -3,7 +3,7 @@ import time
 
 import pytest
 
-from reddit_scraper import health, credentials, config, sources
+from reddit_scraper import config, credentials, health, sources
 
 
 @pytest.fixture

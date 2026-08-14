@@ -3,16 +3,19 @@ Flask API for Reddit Monitor Web UI
 Provides REST endpoints to manage search.json configuration
 """
 
-from flask import Flask, jsonify, request
-from flask_cors import CORS
 import json
+import logging
 import os
 import uuid
-import requests
 from datetime import datetime
-import apprise
 
-from reddit_scraper import config as rs_config, credentials as rs_credentials
+import apprise
+import requests
+from flask import Flask, jsonify, request
+from flask_cors import CORS
+
+from reddit_scraper import config as rs_config
+from reddit_scraper import credentials as rs_credentials
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
@@ -100,10 +103,10 @@ def bot_status():
 def search_subreddits():
     """Search for subreddits using Reddit's API."""
     query = request.args.get('q', '').strip()
-    
+
     if not query or len(query) < 2:
         return jsonify({'subreddits': []})
-    
+
     try:
         # Use Reddit's search API
         headers = {'User-Agent': 'RedditMonitorWebUI/1.0'}
@@ -112,7 +115,7 @@ def search_subreddits():
             headers=headers,
             timeout=5
         )
-        
+
         if response.status_code == 200:
             data = response.json()
             subreddits = []
@@ -136,7 +139,7 @@ def validate_subreddit(subreddit_name):
     """Validate that a subreddit exists."""
     if not subreddit_name or len(subreddit_name) < 2:
         return jsonify({'valid': False, 'error': 'Subreddit name too short'})
-    
+
     try:
         headers = {'User-Agent': 'RedditMonitorWebUI/1.0'}
         response = requests.get(
@@ -144,7 +147,7 @@ def validate_subreddit(subreddit_name):
             headers=headers,
             timeout=5
         )
-        
+
         if response.status_code == 200:
             data = response.json()
             sub_data = data.get('data', {})
@@ -157,7 +160,7 @@ def validate_subreddit(subreddit_name):
                     'subscribers': sub_data.get('subscribers', 0),
                     'nsfw': sub_data.get('over18', False)
                 })
-        
+
         # Subreddit doesn't exist or is private
         return jsonify({'valid': False, 'error': 'Subreddit not found'})
     except Exception as e:
@@ -182,16 +185,16 @@ def create_monitor():
     """Create a new monitor."""
     try:
         data = request.get_json()
-        
+
         if not data:
             return jsonify({'error': 'No data provided'}), 400
-        
+
         if not data.get('subreddit'):
             return jsonify({'error': 'Subreddit is required'}), 400
-        
+
         config = load_config()
         monitors = config.get('subreddits_to_search', [])
-        
+
         # Create new monitor with defaults
         new_monitor = {
             'id': str(uuid.uuid4()),
@@ -210,7 +213,7 @@ def create_monitor():
             'author_includes': data.get('author_includes', []),
             'author_excludes': data.get('author_excludes', [])
         }
-        
+
         clean_monitor(new_monitor)
         monitors.append(new_monitor)
         config['subreddits_to_search'] = monitors
@@ -227,11 +230,11 @@ def get_monitor(monitor_id):
     try:
         config = load_config()
         monitors = config.get('subreddits_to_search', [])
-        
+
         for monitor in monitors:
             if monitor.get('id') == monitor_id:
                 return jsonify(monitor)
-        
+
         return jsonify({'error': 'Monitor not found'}), 404
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -242,13 +245,13 @@ def update_monitor(monitor_id):
     """Update an existing monitor."""
     try:
         data = request.get_json()
-        
+
         if not data:
             return jsonify({'error': 'No data provided'}), 400
-        
+
         config = load_config()
         monitors = config.get('subreddits_to_search', [])
-        
+
         for i, monitor in enumerate(monitors):
             if monitor.get('id') == monitor_id:
                 # Update fields
@@ -281,13 +284,13 @@ def update_monitor(monitor_id):
                     monitors[i]['author_includes'] = data['author_includes']
                 if 'author_excludes' in data:
                     monitors[i]['author_excludes'] = data['author_excludes']
-                
+
                 clean_monitor(monitors[i])
                 config['subreddits_to_search'] = monitors
                 save_config(config)
 
                 return jsonify(monitors[i])
-        
+
         return jsonify({'error': 'Monitor not found'}), 404
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -299,14 +302,14 @@ def delete_monitor(monitor_id):
     try:
         config = load_config()
         monitors = config.get('subreddits_to_search', [])
-        
+
         for i, monitor in enumerate(monitors):
             if monitor.get('id') == monitor_id:
                 deleted = monitors.pop(i)
                 config['subreddits_to_search'] = monitors
                 save_config(config)
                 return jsonify({'deleted': deleted})
-        
+
         return jsonify({'error': 'Monitor not found'}), 404
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -353,7 +356,7 @@ def get_credentials():
     """Get credentials (masked for security)."""
     creds = load_credentials()
     notification_urls = creds.get('notification_urls', [])
-    
+
     # Mask notification URLs (show service type but hide tokens)
     masked_urls = []
     for url in notification_urls:
@@ -363,7 +366,7 @@ def get_credentials():
             masked_urls.append(f"{protocol}://••••••••")
         else:
             masked_urls.append('••••••••')
-    
+
     return jsonify({
         'reddit_client_id': mask_value(creds.get('reddit_client_id', '')),
         'reddit_client_secret': mask_value(creds.get('reddit_client_secret', '')),
@@ -397,7 +400,7 @@ def resolve_credential(data, creds, key):
 
 def validate_reddit_credentials(client_id, client_secret, username, password, user_agent):
     """Validate Reddit API credentials by attempting authentication.
-    
+
     Returns (success: bool, error_message: str or None)
     """
     # First, check for non-ASCII characters
@@ -407,7 +410,7 @@ def validate_reddit_credentials(client_id, client_secret, username, password, us
         if non_ascii:
             i, c = non_ascii[0]
             return False, f"Non-ASCII character found in {name} at position {i}: '{c}' ({hex(ord(c))}). Please re-type the credential."
-    
+
     # Try to authenticate with Reddit
     try:
         auth = requests.auth.HTTPBasicAuth(client_id, client_secret)
@@ -424,7 +427,7 @@ def validate_reddit_credentials(client_id, client_secret, username, password, us
             data=data,
             timeout=10
         )
-        
+
         if response.status_code == 200:
             result = response.json()
             if 'access_token' in result:
@@ -455,23 +458,23 @@ def update_credentials():
         data = request.get_json()
         if not data:
             return jsonify({'error': 'No data provided'}), 400
-        
+
         creds = load_credentials()
-        
+
         # Only update fields that are provided and not masked
         fields = ['reddit_client_id', 'reddit_client_secret', 'reddit_username',
                   'reddit_password', 'reddit_user_agent', 'sylvia_api_key']
-        
+
         for field in fields:
             if field in data and not is_masked(data[field]):
                 creds[field] = data[field]
-        
+
         # Handle notification_urls array
         if 'notification_urls' in data:
             # Filter out empty strings
             urls = [url.strip() for url in data['notification_urls'] if url and url.strip()]
             creds['notification_urls'] = urls
-        
+
         # Validate Reddit credentials if requested or if they changed
         validate = data.get('validate', False)
         if validate:
@@ -488,9 +491,9 @@ def update_credentials():
                     'error': error,
                     'validation_failed': True
                 }), 400
-        
+
         save_credentials(creds)
-        
+
         return jsonify({
             'success': True,
             'configured': is_configured(),
@@ -546,22 +549,22 @@ def test_reddit_credentials():
     try:
         data = request.get_json()
         creds = load_credentials()
-        
+
         # Use provided values or fall back to stored ones (masked = untouched)
         client_id = resolve_credential(data, creds, 'reddit_client_id')
         client_secret = resolve_credential(data, creds, 'reddit_client_secret')
         username = resolve_credential(data, creds, 'reddit_username')
         password = resolve_credential(data, creds, 'reddit_password')
         user_agent = data.get('reddit_user_agent') or creds.get('reddit_user_agent', 'RedditMonitor/1.0')
-        
+
         if not all([client_id, client_secret, username, password]):
             return jsonify({
                 'success': False,
                 'error': 'Missing required Reddit credentials'
             }), 400
-        
+
         valid, error = validate_reddit_credentials(client_id, client_secret, username, password, user_agent)
-        
+
         return jsonify({
             'success': valid,
             'error': error
@@ -576,24 +579,24 @@ def test_notification():
     try:
         creds = load_credentials()
         notification_urls = creds.get('notification_urls', [])
-        
+
         if not notification_urls:
             return jsonify({
                 'success': False,
                 'error': 'No notification services configured'
             }), 400
-        
+
         # Create Apprise instance and add all URLs
         apobj = apprise.Apprise()
         for url in notification_urls:
             apobj.add(url)
-        
+
         # Send test notification
         result = apobj.notify(
             body="This is a test notification from Reddit Monitor. If you see this, notifications are working! 🎉",
             title="🧪 Test Notification"
         )
-        
+
         return jsonify({
             'success': result,
             'services_count': len(notification_urls),
@@ -605,11 +608,12 @@ def test_notification():
 
 
 if __name__ == '__main__':
-    print(f"📡 Reddit Monitor API starting...")
-    print(f"📁 Config file: {CONFIG_FILE_PATH}")
-    print(f"🔐 Credentials file: {CREDENTIALS_FILE_PATH}")
-    print(f"🌐 API available at: http://0.0.0.0:5001")
-    print(f"📱 Access from other devices using your local IP")
+    logging.basicConfig(level=logging.INFO, format='%(message)s')
+    logging.info("📡 Reddit Monitor API starting...")
+    logging.info(f"📁 Config file: {CONFIG_FILE_PATH}")
+    logging.info(f"🔐 Credentials file: {CREDENTIALS_FILE_PATH}")
+    logging.info("🌐 API available at: http://0.0.0.0:5001")
+    logging.info("📱 Access from other devices using your local IP")
     # Use debug=False in production for better performance
     debug_mode = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
     app.run(host='0.0.0.0', port=5001, debug=debug_mode)

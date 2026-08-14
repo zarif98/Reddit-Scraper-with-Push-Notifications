@@ -2,15 +2,16 @@
 
 Wiring + main loop only; the implementation lives in the reddit_scraper package.
 """
-import time
 import logging
+import time
 from concurrent.futures import ThreadPoolExecutor
 
+from colorama import Fore, Style, init
 from dotenv import load_dotenv
-from colorama import init, Fore, Style
 
 from reddit_scraper import config, credentials, health
 from reddit_scraper.monitor import RedditMonitor
+
 # Re-exported for the test suite / external callers.
 from reddit_scraper.sources import fetch_posts_json, fetch_thread_comments_json  # noqa: F401
 

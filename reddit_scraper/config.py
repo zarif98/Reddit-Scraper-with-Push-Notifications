@@ -3,10 +3,10 @@
 Paths are resolved from the DATA_DIR env var at call time (not captured at import)
 so tests can repoint DATA_DIR and reload entrypoints without stale paths.
 """
-import os
 import json
-import uuid
 import logging
+import os
+import uuid
 
 DEFAULT_COLORS = [
     '#8B5CF6', '#3B82F6', '#22C55E', '#EF4444',

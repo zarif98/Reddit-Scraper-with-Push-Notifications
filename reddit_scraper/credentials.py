@@ -1,7 +1,7 @@
 """Credential loading, sanitization, encoding checks, and PRAW authentication."""
-import os
 import json
 import logging
+import os
 
 import praw
 

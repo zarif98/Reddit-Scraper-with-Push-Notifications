@@ -4,18 +4,18 @@ Posts/comments are fetched through several pathways, tried in the configured ord
 (see config.get_source_order). A source that errors or returns nothing is put on a
 short cooldown so we don't keep hammering a blocked endpoint.
 """
+import html
+import logging
 import os
 import re
-import html
-import time
-import logging
 import threading
+import time
 import xml.etree.ElementTree as ET
 from urllib.parse import urlparse
 
 import requests
 
-from . import config, status, notifications
+from . import config, notifications, status
 
 ATOM_NS = {'a': 'http://www.w3.org/2005/Atom'}
 RSS_USER_AGENT = os.getenv(

@@ -1,8 +1,8 @@
 """Pytest configuration and fixtures for Reddit Monitor tests."""
-import sys
-import os
-import tempfile
 import json
+import os
+import sys
+import tempfile
 
 # Create temp data dir and credentials BEFORE any imports of bot.py
 _temp_dir = tempfile.mkdtemp()

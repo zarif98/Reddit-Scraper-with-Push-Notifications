@@ -6,9 +6,9 @@ is busy failing. These push heartbeats report real health instead:
 - the optional fallback heartbeat reports DOWN when OAuth is expected but the bot
   is on an RSS/JSON fallback, so degradation is alerted while the primary stays UP.
 """
+import logging
 import os
 import time
-import logging
 
 import requests
 

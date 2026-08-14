@@ -1,8 +1,7 @@
 """Tests for thread comment monitoring functionality."""
-import pytest
+from unittest.mock import MagicMock
+
 import responses
-import json
-from unittest.mock import MagicMock, patch, PropertyMock
 
 
 def make_comment_response(comments):
@@ -240,8 +239,9 @@ class TestFindCurrentThread:
         assert thread_id is None
 
     def test_uses_cache_within_ttl(self):
-        from bot import RedditMonitor
         import time
+
+        from bot import RedditMonitor
 
         RedditMonitor._thread_cache = {
             'frugalmalefashion-Buy/Sell/Trade': {

@@ -1,8 +1,8 @@
 """RedditMonitor: evaluates a subreddit (or BST thread) against keyword/filter rules."""
-import os
-import time
-import pickle
 import logging
+import os
+import pickle
+import time
 
 from . import config, credentials, notifications, sources
 

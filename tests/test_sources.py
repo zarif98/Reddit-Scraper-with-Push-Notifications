@@ -2,7 +2,7 @@
 import pytest
 import responses
 
-from reddit_scraper import sources, config
+from reddit_scraper import config, sources
 
 
 @pytest.fixture(autouse=True)
@@ -188,8 +188,8 @@ class TestCoalescing:
         assert r1 == r2
 
     def test_concurrent_duplicates_coalesce_to_one(self, monkeypatch):
-        from concurrent.futures import ThreadPoolExecutor
         import time
+        from concurrent.futures import ThreadPoolExecutor
         sources.FETCH_CACHE_TTL = 90
         calls = {'n': 0}
 
