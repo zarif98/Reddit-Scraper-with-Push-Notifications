@@ -75,15 +75,31 @@ drift, you get bugs like "Sylvia shown as a fallback." Rules, in priority order:
    `using_json_fallback` from `/api/status` and renders them. It must **not** re-compute a
    decision from raw fields (e.g. `activeSource in ('rss','json')` is banned — that logic
    belongs in the backend, keyed off `RICH_SOURCES`).
-3. **Constants that genuinely must be mirrored across Python↔TypeScript** (no shared schema,
-   and codegen would be overkill here) — e.g. the monitor color palette (`DEFAULT_COLORS` in
-   `config.py` ↔ `frontend/types/monitor.ts`) and monitor field defaults (`clean_monitor` ↔
-   `DEFAULT_MONITOR`) — are the **only** acceptable duplication. Each copy must carry a
-   `MUST stay in sync with <path>` comment, and you change both together.
+3. **Shared data _shapes_ are generated, not mirrored.** The `Monitor` TypeScript type is
+   generated from the Pydantic model in `reddit_scraper/models.py` (the schema-of-record) —
+   see "Generated types" below. Don't hand-write a parallel interface.
+4. **The few remaining hand-mirrored constants** (`DEFAULT_COLORS` in `config.py` ↔
+   `frontend/types/monitor.ts`; `DEFAULT_MONITOR` _values_ ↔ backend defaults) are the **only**
+   acceptable duplication. Each copy carries a `MUST stay in sync with <path>` comment, and you
+   change both together. (Migrating these onto the generated model is future work.)
 
 Rule of thumb: if changing a rule means editing more than one file *and* those files can't see
-each other's value, you've coupled them — hoist the value into `config.py` (backend) or expose
-it through the API (frontend).
+each other's value, you've coupled them — hoist the value into `config.py` (backend), expose it
+through the API, or put the shape in `models.py` and generate it.
+
+### Generated types
+
+`reddit_scraper/models.py` (Pydantic) is the single schema-of-record for shapes shared with the
+frontend. `frontend/types/generated.ts` is produced from it and **committed** — never edit it
+by hand. Regenerate after changing a model:
+
+```bash
+npm --prefix frontend run gen:types   # or: python3 scripts/gen_types.py
+```
+
+CI regenerates and fails if the committed file is stale, and a pytest guard
+(`tests/test_models.py`) checks every model field is present. Backend validation/serialization
+against these models is being adopted incrementally (the API already round-trips `Monitor`).
 
 ### Error handling
 
