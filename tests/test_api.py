@@ -152,7 +152,32 @@ class TestCredentialsAPI:
         response = client.get('/api/credentials')
         assert response.status_code == 200
         data = response.get_json()
-        
+
         # Client ID should be partially masked
         if data.get('reddit_client_id'):
             assert '••••' in data['reddit_client_id']
+
+    def test_source_order_defaults_to_reddit(self, client):
+        """With no source_order saved, the active source reports as reddit."""
+        response = client.get('/api/source-order')
+        assert response.status_code == 200
+        assert response.get_json()['active_source'] == 'reddit'
+
+    def test_set_source_to_sylvia_persists(self, client):
+        """Selecting sylvia writes a sylvia-first order and reads back as sylvia."""
+        put = client.put('/api/source-order', json={'active_source': 'sylvia'})
+        assert put.status_code == 200
+        assert put.get_json()['source_order'] == ['sylvia', 'json', 'rss']
+        # persisted + reflected on the next GET
+        assert client.get('/api/source-order').get_json()['active_source'] == 'sylvia'
+
+    def test_set_source_back_to_reddit(self, client):
+        """Selecting reddit writes an oauth-first order."""
+        client.put('/api/source-order', json={'active_source': 'sylvia'})
+        put = client.put('/api/source-order', json={'active_source': 'reddit'})
+        assert put.get_json()['source_order'] == ['oauth', 'json', 'rss']
+
+    def test_invalid_source_rejected(self, client):
+        """An unknown source is rejected with 400."""
+        response = client.put('/api/source-order', json={'active_source': 'nope'})
+        assert response.status_code == 400

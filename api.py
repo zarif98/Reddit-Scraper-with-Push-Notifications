@@ -51,7 +51,7 @@ def get_source_capability():
     """Report which data-source pathways are configured and whether the OAuth API
     (required for score/domain filters) is available. Used by the UI to hide filters
     that the active pathways can't provide."""
-    valid = ('oauth', 'rss', 'json')
+    valid = ('oauth', 'rss', 'json', 'sylvia')
     try:
         config = load_config() or {}
     except Exception:
@@ -483,6 +483,46 @@ def update_credentials():
             'configured': is_configured(),
             'notification_count': len(creds.get('notification_urls', []))
         })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# Which data source the UI dropdown selects, mapped to the bot's source order.
+# The free json/rss pathways are kept as a last-ditch fallback behind the chosen
+# primary so a blocked primary still degrades gracefully rather than going dark.
+SOURCE_PRESETS = {
+    'reddit': ['oauth', 'json', 'rss'],
+    'sylvia': ['sylvia', 'json', 'rss'],
+}
+
+
+@app.route('/api/source-order', methods=['GET'])
+def get_source_order():
+    """Report the active data source (derived from the primary of the saved source order)."""
+    try:
+        config = load_config() or {}
+    except Exception:
+        config = {}
+    order = config.get('source_order') or []
+    active = 'sylvia' if order and order[0] == 'sylvia' else 'reddit'
+    return jsonify({'active_source': active, 'source_order': order})
+
+
+@app.route('/api/source-order', methods=['PUT'])
+def update_source_order():
+    """Set the active data source. Writes source_order into search.json; the bot
+    hot-reloads that file, so the change takes effect without a restart."""
+    try:
+        data = request.get_json() or {}
+        active = data.get('active_source')
+        if active not in SOURCE_PRESETS:
+            return jsonify({'error': f"active_source must be one of {list(SOURCE_PRESETS)}"}), 400
+
+        config = load_config() or {}
+        config['source_order'] = SOURCE_PRESETS[active]
+        save_config(config)
+        return jsonify({'success': True, 'active_source': active,
+                        'source_order': SOURCE_PRESETS[active]})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
