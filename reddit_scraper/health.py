@@ -25,7 +25,7 @@ def send_kuma_heartbeat():
     if push_url:
         stale_after = int(os.getenv('KUMA_FETCH_STALE_SECONDS', '1500'))  # 25 min
         now = time.time()
-        last = sources._LAST_FETCH_SUCCESS_TS
+        last = sources.get_last_fetch_success_ts()
 
         if last is not None and (now - last) < stale_after:
             status, msg = 'up', f"ok (last good fetch {int(now - last)}s ago)"
@@ -58,7 +58,7 @@ def send_kuma_fallback_heartbeat():
     if not url:
         return
 
-    active = sources._active_source
+    active = sources.get_active_source()
     if not _oauth_expected():
         status, msg = 'up', f"using {active or 'rss/json'} (by configuration)"
     elif active == 'oauth':

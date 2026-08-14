@@ -8,22 +8,12 @@ from reddit_scraper import sources, config
 @pytest.fixture(autouse=True)
 def reset_source_state():
     """Source state is module-global; reset it (and disable RSS throttling/caching) per test."""
-    sources._source_cooldown_until.clear()
-    sources._source_failures.clear()
-    sources._fetch_cache.clear()
-    sources._fetch_key_locks.clear()
-    sources._active_source = None
-    sources._LAST_FETCH_SUCCESS_TS = None
-    sources._auth_error_notified = False
-    sources._rss_last_request[0] = 0.0
+    sources._state.reset()          # fresh runtime state (cooldowns, cache, proxy, flags)
     sources.RSS_MIN_INTERVAL = 0
-    sources.FETCH_CACHE_TTL = 0  # disable caching by default; coalescing tests opt back in
-    sources._PROXIES = []        # no proxy by default; proxy tests opt back in
-    sources._proxy_index[0] = 0
-    sources._proxy_cooldown_until.clear()
+    sources.FETCH_CACHE_TTL = 0     # disable caching by default; coalescing tests opt back in
+    sources._PROXIES = []           # no proxy by default; proxy tests opt back in
     sources.SYLVIA_API_KEY = None   # sylvia disabled by default; its tests set a key
-    sources._sylvia_key_warned = False
-    config.set_source_order(None)  # back to default oauth -> json -> rss
+    config.set_source_order(None)   # back to default oauth -> json -> rss
     yield
 
 
@@ -120,7 +110,7 @@ class TestFetchPostsDispatcher:
         monkeypatch.setattr(sources, 'fetch_posts_rss', lambda sub, lim: _post())
         posts, source = sources.fetch_posts('gamedeals', 10, reddit=None)
         assert source == 'json'          # oauth skipped (no reddit), json is next
-        assert sources._active_source == 'json'
+        assert sources.get_active_source() == 'json'
 
     def test_falls_through_on_failure_and_cools_down(self, monkeypatch):
         config.set_source_order(['json', 'rss'])
@@ -156,8 +146,8 @@ class TestFetchPostsDispatcher:
         monkeypatch.setattr(sources, '_fetch_posts_oauth', lambda r, sub, lim: _post())
         posts, source = sources.fetch_posts('gamedeals', 10, reddit=object())
         assert source == 'oauth'
-        assert sources._active_source == 'oauth'
-        assert sources._LAST_FETCH_SUCCESS_TS is not None
+        assert sources.get_active_source() == 'oauth'
+        assert sources.get_last_fetch_success_ts() is not None
 
 
 class TestAuthErrorNotificationGuard:
@@ -242,29 +232,29 @@ class TestBackoff:
     def test_exponential_backoff_on_consecutive_failures(self):
         import time
         sources._mark_source_down('rss')                       # 1st: base (300s)
-        first = sources._source_cooldown_until['rss'] - time.time()
+        first = sources._state.source_cooldown_until['rss'] - time.time()
         sources._mark_source_down('rss')                       # 2nd: 2x (600s)
-        second = sources._source_cooldown_until['rss'] - time.time()
+        second = sources._state.source_cooldown_until['rss'] - time.time()
         assert 290 < first <= sources.SOURCE_COOLDOWN_SECONDS
         assert second > first * 1.5                            # roughly doubled
 
     def test_success_resets_backoff(self):
         sources._mark_source_down('rss')
         sources._mark_source_down('rss')
-        assert sources._source_failures['rss'] == 2
+        assert sources._state.source_failures['rss'] == 2
         sources._note_source_success('rss')
-        assert sources._source_failures['rss'] == 0
+        assert sources._state.source_failures['rss'] == 0
 
     def test_backoff_capped(self, monkeypatch):
         monkeypatch.setattr(sources, 'SOURCE_COOLDOWN_MAX', 1000)
         import time
         for _ in range(10):
             sources._mark_source_down('rss')
-        assert sources._source_cooldown_until['rss'] - time.time() <= 1000
+        assert sources._state.source_cooldown_until['rss'] - time.time() <= 1000
 
     def test_explicit_seconds_does_not_increment_failures(self):
         sources._mark_source_down('rss', 50)
-        assert sources._source_failures.get('rss', 0) == 0
+        assert sources._state.source_failures.get('rss', 0) == 0
 
 
 class TestProxying:
@@ -325,7 +315,7 @@ class TestProxying:
         monkeypatch.setattr(sources.requests, 'get', fake_get)
         posts = sources.fetch_posts_rss('gamedeals')
         assert attempts == ['http://dead:8000', 'http://good:8000']
-        assert 'http://dead:8000' in sources._proxy_cooldown_until   # cooled down
+        assert 'http://dead:8000' in sources._state.proxy_cooldown_until   # cooled down
         assert posts is not None
 
     def test_all_proxies_down_raises_no_direct_leak(self, monkeypatch):

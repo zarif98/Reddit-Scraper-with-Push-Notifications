@@ -26,23 +26,10 @@ RSS_USER_AGENT = os.getenv(
 JSON_USER_AGENT = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
                    '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
 
-# Tracks the last time ANY Reddit fetch genuinely succeeded (used by the Kuma heartbeat).
-_LAST_FETCH_SUCCESS_TS = None
-# The data source currently serving data.
-_active_source = None
-# Whether we've already notified about an OAuth 401 (reset on the next oauth success).
-_auth_error_notified = False
-
-_source_cooldown_until = {}      # source name -> epoch time until which it is skipped
-_source_failures = {}            # source name -> consecutive failure count (for backoff)
-_source_state_lock = threading.Lock()
+# --- Tuning knobs (config; read from env once, overridable in tests) ---
 SOURCE_COOLDOWN_SECONDS = int(os.getenv('SOURCE_COOLDOWN_SECONDS', '300'))      # base cooldown
 SOURCE_COOLDOWN_MAX = int(os.getenv('SOURCE_COOLDOWN_MAX_SECONDS', '3600'))     # cap on backoff
-
-# RSS is aggressively per-IP rate-limited, so serialize requests with a minimum gap.
-_rss_throttle_lock = threading.Lock()
-_rss_last_request = [0.0]
-RSS_MIN_INTERVAL = float(os.getenv('RSS_MIN_INTERVAL_SECONDS', '4'))
+RSS_MIN_INTERVAL = float(os.getenv('RSS_MIN_INTERVAL_SECONDS', '4'))            # min gap between RSS reqs
 
 # Optional proxying so the anonymous RSS/JSON endpoints aren't all hit from one IP
 # (the IP Reddit ends up flagging). REDDIT_PROXIES is a comma-separated pool rotated
@@ -58,9 +45,6 @@ def _parse_proxies():
     return [single] if single else []
 
 _PROXIES = _parse_proxies()
-_proxy_index = [0]
-_proxy_cooldown_until = {}        # proxy url -> epoch time until which it is skipped
-_proxy_lock = threading.Lock()
 PROXY_COOLDOWN_SECONDS = int(os.getenv('PROXY_COOLDOWN_SECONDS', '120'))
 
 # Sylvia (api.sylvia-api.com) is a third-party Reddit gateway that returns native-Reddit-
@@ -71,116 +55,209 @@ PROXY_COOLDOWN_SECONDS = int(os.getenv('PROXY_COOLDOWN_SECONDS', '120'))
 SYLVIA_API_KEY = os.getenv('SYLVIA_API_KEY')
 SYLVIA_BASE_URL = os.getenv('SYLVIA_BASE_URL', 'https://api.sylvia-api.com/v1/reddit').rstrip('/')
 SYLVIA_TIMEOUT = float(os.getenv('SYLVIA_TIMEOUT_SECONDS', '15'))
-_sylvia_key_warned = False       # so the "no key" skip is logged only once
 
 # Short-lived response cache so concurrent monitors covering the same subreddit/thread
 # share a single network request instead of each issuing its own (which both wastes
 # requests and trips rate limits). TTL only needs to span one scheduling burst.
 FETCH_CACHE_TTL = float(os.getenv('FETCH_CACHE_TTL_SECONDS', '90'))
-_fetch_cache = {}                # key -> (timestamp, value)
-_fetch_cache_lock = threading.Lock()
-_fetch_key_locks = {}            # key -> Lock (so concurrent callers coalesce, not stampede)
 
 
+class _SourceState:
+    """Mutable runtime state behind the fetch dispatcher: the fetch-success heartbeat,
+    the active source, source cooldowns + exponential backoff, the coalescing cache,
+    proxy rotation, the RSS throttle clock, and one-time-notification flags.
+
+    A single module-level instance (`_state`) owns it; the module-level functions below
+    are a thin facade over it, so callers and tests don't reach into individual fields.
+    Tuning knobs (SOURCE_COOLDOWN_*, RSS_MIN_INTERVAL, FETCH_CACHE_TTL,
+    PROXY_COOLDOWN_SECONDS, _PROXIES, SYLVIA_API_KEY) stay module-level config, read here
+    by name so tests can still override them.
+    """
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        """Reset all runtime state to fresh (called at import and between tests)."""
+        self.last_fetch_success_ts = None   # last time ANY fetch succeeded (Kuma heartbeat)
+        self.active_source = None           # data source currently serving data
+        self.auth_error_notified = False    # OAuth-401 notified? (reset on next oauth success)
+
+        self.source_cooldown_until = {}     # source -> epoch until which it is skipped
+        self.source_failures = {}           # source -> consecutive failure count (for backoff)
+        self._lock = threading.Lock()
+
+        self.rss_last_request = 0.0         # RSS is per-IP rate-limited; serialize with a gap
+        self._rss_lock = threading.Lock()
+
+        self.proxy_index = 0                # round-robin cursor over _PROXIES
+        self.proxy_cooldown_until = {}      # proxy -> epoch until which it is skipped
+        self._proxy_lock = threading.Lock()
+
+        self.fetch_cache = {}               # coalesce key -> (timestamp, value)
+        self.key_locks = {}                 # coalesce key -> Lock (callers share, not stampede)
+        self._cache_lock = threading.Lock()
+
+        self.sylvia_key_warned = False      # so the "no Sylvia key" skip logs once
+
+    # --- fetch-success heartbeat / active source ---
+    def record_fetch_success(self):
+        self.last_fetch_success_ts = time.time()
+
+    def set_active_source(self, source):
+        """Record (and surface) the active source, only when it changes."""
+        if source != self.active_source:
+            self.active_source = source
+            logging.info(f"📡 Active Reddit data source: {source}")
+            status.save_bot_status(source != 'oauth', f"Active data source: {source}", active_source=source)
+
+    # --- one-time OAuth-failure notification guard ---
+    def claim_auth_error_notification(self):
+        """Atomically claim the right to send the one-time OAuth-failure notification.
+        Monitors run concurrently, so without this guard every thread hitting the same
+        401 fires its own. Returns True for exactly one caller until reset on oauth success."""
+        with self._lock:
+            if self.auth_error_notified:
+                return False
+            self.auth_error_notified = True
+            return True
+
+    def reset_auth_error_notification(self):
+        with self._lock:
+            self.auth_error_notified = False
+
+    # --- source cooldown + exponential backoff ---
+    def source_available(self, name):
+        if name == 'sylvia' and not SYLVIA_API_KEY:
+            with self._lock:
+                if not self.sylvia_key_warned:
+                    logging.warning("Source 'sylvia' is in the order but SYLVIA_API_KEY is unset; skipping it.")
+                    self.sylvia_key_warned = True
+            return False
+        with self._lock:
+            return time.time() >= self.source_cooldown_until.get(name, 0)
+
+    def mark_source_down(self, name, seconds=None):
+        """Cool down a failed source. With no explicit duration, back off exponentially on
+        consecutive failures (base, 2x, 4x, ... capped) so a dead source gets a real rest."""
+        with self._lock:
+            if seconds is None:
+                n = self.source_failures.get(name, 0) + 1
+                self.source_failures[name] = n
+                cooldown = min(SOURCE_COOLDOWN_SECONDS * (2 ** (n - 1)), SOURCE_COOLDOWN_MAX)
+            else:
+                cooldown = seconds
+            self.source_cooldown_until[name] = time.time() + cooldown
+        logging.warning(f"Pausing Reddit source '{name}' for {int(cooldown)}s after failure")
+
+    def note_source_success(self, name):
+        """Reset a source's backoff after it succeeds."""
+        with self._lock:
+            self.source_failures[name] = 0
+
+    # --- coalescing cache ---
+    def coalesce(self, key, producer):
+        """Return a cached fresh value for key, or produce + cache it. Concurrent callers
+        for the same key wait on a per-key lock and share the single result."""
+        now = time.time()
+        with self._cache_lock:
+            entry = self.fetch_cache.get(key)
+            if entry and now - entry[0] < FETCH_CACHE_TTL:
+                return entry[1]
+            key_lock = self.key_locks.setdefault(key, threading.Lock())
+
+        with key_lock:
+            # Re-check inside the per-key lock: another thread may have just produced it.
+            now = time.time()
+            with self._cache_lock:
+                entry = self.fetch_cache.get(key)
+                if entry and now - entry[0] < FETCH_CACHE_TTL:
+                    return entry[1]
+            value = producer()
+            with self._cache_lock:
+                self.fetch_cache[key] = (time.time(), value)
+            return value
+
+    # --- RSS throttle ---
+    def rss_throttle(self):
+        """Block until at least RSS_MIN_INTERVAL seconds have passed since the last RSS request."""
+        with self._rss_lock:
+            wait = RSS_MIN_INTERVAL - (time.time() - self.rss_last_request)
+            if wait > 0:
+                time.sleep(wait)
+            self.rss_last_request = time.time()
+
+    # --- proxy rotation ---
+    def next_proxy(self):
+        """Round-robin the next proxy that isn't cooling down, or None if all are (or none set)."""
+        if not _PROXIES:
+            return None
+        now = time.time()
+        with self._proxy_lock:
+            n = len(_PROXIES)
+            for _ in range(n):
+                i = self.proxy_index % n
+                self.proxy_index = (i + 1) % n
+                proxy = _PROXIES[i]
+                if self.proxy_cooldown_until.get(proxy, 0) <= now:
+                    return proxy
+            return None
+
+    def mark_proxy_down(self, proxy):
+        """Skip a proxy that failed to connect for a short while, then let it back in."""
+        with self._proxy_lock:
+            self.proxy_cooldown_until[proxy] = time.time() + PROXY_COOLDOWN_SECONDS
+
+
+_state = _SourceState()
+
+
+# --- thin module-level facade over _state (keeps existing call sites and tests stable) ---
 def record_fetch_success():
     """Mark that a Reddit fetch just succeeded (used by the Kuma heartbeat)."""
-    global _LAST_FETCH_SUCCESS_TS
-    _LAST_FETCH_SUCCESS_TS = time.time()
+    _state.record_fetch_success()
+
+
+def get_last_fetch_success_ts():
+    """Epoch of the last successful fetch, or None (used by the health heartbeat)."""
+    return _state.last_fetch_success_ts
+
+
+def get_active_source():
+    """The data source currently serving data, or None."""
+    return _state.active_source
 
 
 def _claim_auth_error_notification():
-    """Atomically claim the right to send the one-time OAuth-failure notification.
-
-    Monitors run concurrently, so without this guard every thread that hits the same
-    401 fires its own notification. Returns True for exactly one caller until reset
-    on the next oauth success.
-    """
-    global _auth_error_notified
-    with _source_state_lock:
-        if _auth_error_notified:
-            return False
-        _auth_error_notified = True
-        return True
+    return _state.claim_auth_error_notification()
 
 
 def _reset_auth_error_notification():
-    global _auth_error_notified
-    with _source_state_lock:
-        _auth_error_notified = False
+    _state.reset_auth_error_notification()
 
 
 def _source_available(name):
-    if name == 'sylvia' and not SYLVIA_API_KEY:
-        global _sylvia_key_warned
-        with _source_state_lock:
-            if not _sylvia_key_warned:
-                logging.warning("Source 'sylvia' is in the order but SYLVIA_API_KEY is unset; skipping it.")
-                _sylvia_key_warned = True
-        return False
-    with _source_state_lock:
-        return time.time() >= _source_cooldown_until.get(name, 0)
+    return _state.source_available(name)
 
 
 def _mark_source_down(name, seconds=None):
-    """Cool down a failed source. With no explicit duration, back off exponentially on
-    consecutive failures (base, 2x, 4x, ... capped) so a flagged IP / dead source gets
-    a real rest instead of being retried every cycle."""
-    with _source_state_lock:
-        if seconds is None:
-            n = _source_failures.get(name, 0) + 1
-            _source_failures[name] = n
-            cooldown = min(SOURCE_COOLDOWN_SECONDS * (2 ** (n - 1)), SOURCE_COOLDOWN_MAX)
-        else:
-            cooldown = seconds
-        _source_cooldown_until[name] = time.time() + cooldown
-    logging.warning(f"Pausing Reddit source '{name}' for {int(cooldown)}s after failure")
+    _state.mark_source_down(name, seconds)
 
 
 def _note_source_success(name):
-    """Reset a source's backoff after it succeeds."""
-    with _source_state_lock:
-        _source_failures[name] = 0
+    _state.note_source_success(name)
 
 
 def _coalesce(key, producer):
-    """Return a cached fresh value for key, or produce + cache it. Concurrent callers
-    for the same key wait on a per-key lock and share the single result."""
-    now = time.time()
-    with _fetch_cache_lock:
-        entry = _fetch_cache.get(key)
-        if entry and now - entry[0] < FETCH_CACHE_TTL:
-            return entry[1]
-        key_lock = _fetch_key_locks.setdefault(key, threading.Lock())
-
-    with key_lock:
-        # Re-check inside the per-key lock: another thread may have just produced it.
-        now = time.time()
-        with _fetch_cache_lock:
-            entry = _fetch_cache.get(key)
-            if entry and now - entry[0] < FETCH_CACHE_TTL:
-                return entry[1]
-        value = producer()
-        with _fetch_cache_lock:
-            _fetch_cache[key] = (time.time(), value)
-        return value
+    return _state.coalesce(key, producer)
 
 
 def _set_active_source(source):
-    """Record (and surface) the data source currently serving data, only when it changes."""
-    global _active_source
-    if source != _active_source:
-        _active_source = source
-        logging.info(f"📡 Active Reddit data source: {source}")
-        status.save_bot_status(source != 'oauth', f"Active data source: {source}", active_source=source)
+    _state.set_active_source(source)
 
 
 def _rss_throttle():
-    """Block until at least RSS_MIN_INTERVAL seconds have passed since the last RSS request."""
-    with _rss_throttle_lock:
-        wait = RSS_MIN_INTERVAL - (time.time() - _rss_last_request[0])
-        if wait > 0:
-            time.sleep(wait)
-        _rss_last_request[0] = time.time()
+    _state.rss_throttle()
 
 
 def _redact_proxy(proxy):
@@ -189,25 +266,11 @@ def _redact_proxy(proxy):
 
 
 def _next_proxy():
-    """Round-robin the next proxy that isn't cooling down, or None if all are (or none set)."""
-    if not _PROXIES:
-        return None
-    now = time.time()
-    with _proxy_lock:
-        n = len(_PROXIES)
-        for _ in range(n):
-            i = _proxy_index[0] % n
-            _proxy_index[0] = (i + 1) % n
-            proxy = _PROXIES[i]
-            if _proxy_cooldown_until.get(proxy, 0) <= now:
-                return proxy
-        return None
+    return _state.next_proxy()
 
 
 def _mark_proxy_down(proxy):
-    """Skip a proxy that failed to connect for a short while, then let it back in."""
-    with _proxy_lock:
-        _proxy_cooldown_until[proxy] = time.time() + PROXY_COOLDOWN_SECONDS
+    _state.mark_proxy_down(proxy)
 
 
 def _http_get(url, headers, timeout=15):
