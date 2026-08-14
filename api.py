@@ -16,6 +16,7 @@ from flask_cors import CORS
 
 from reddit_scraper import config as rs_config
 from reddit_scraper import credentials as rs_credentials
+from reddit_scraper import models
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
@@ -26,8 +27,8 @@ CONFIG_FILE_PATH = rs_config.get_config_path()
 BOT_STATUS_FILE_PATH = rs_config.get_bot_status_path()
 
 DEFAULT_COLORS = rs_config.DEFAULT_COLORS
-OPTIONAL_LIST_FIELDS = rs_config.OPTIONAL_LIST_FIELDS
-clean_monitor = rs_config.clean_monitor
+# Fields a client may set on a monitor (everything the model owns except the server-managed id).
+MONITOR_INPUT_FIELDS = tuple(f for f in models.Monitor.model_fields if f != 'id')
 
 
 def load_config():
@@ -189,26 +190,12 @@ def create_monitor():
         config = load_config()
         monitors = config.get('subreddits_to_search', [])
 
-        # Create new monitor with defaults
-        new_monitor = {
-            'id': str(uuid.uuid4()),
-            'name': data.get('name', f"r/{data['subreddit']}"),
-            'subreddit': data['subreddit'].strip().lower().replace('r/', ''),
-            'keywords': data.get('keywords', []),
-            'exclude_keywords': data.get('exclude_keywords', []),
-            'min_upvotes': data.get('min_upvotes'),
-            'color': data.get('color', DEFAULT_COLORS[len(monitors) % len(DEFAULT_COLORS)]),
-            'enabled': data.get('enabled', True),
-            'cooldown_minutes': data.get('cooldown_minutes', 10),
-            'max_post_age_hours': data.get('max_post_age_hours', 12),
-            'domain_contains': data.get('domain_contains', []),
-            'domain_excludes': data.get('domain_excludes', []),
-            'flair_contains': data.get('flair_contains', []),
-            'author_includes': data.get('author_includes', []),
-            'author_excludes': data.get('author_excludes', []),
-        }
+        # Validate + default through the model (which normalizes subreddit, fills name, etc.).
+        payload = {field: data[field] for field in MONITOR_INPUT_FIELDS if field in data}
+        payload['id'] = str(uuid.uuid4())
+        payload.setdefault('color', DEFAULT_COLORS[len(monitors) % len(DEFAULT_COLORS)])
+        new_monitor = models.Monitor(**payload).to_stored_dict()
 
-        clean_monitor(new_monitor)
         monitors.append(new_monitor)
         config['subreddits_to_search'] = monitors
         save_config(config)
@@ -248,38 +235,14 @@ def update_monitor(monitor_id):
 
         for i, monitor in enumerate(monitors):
             if monitor.get('id') == monitor_id:
-                # Update fields
-                if 'name' in data:
-                    monitors[i]['name'] = data['name']
-                if 'subreddit' in data:
-                    monitors[i]['subreddit'] = data['subreddit'].strip().lower().replace('r/', '')
-                if 'keywords' in data:
-                    monitors[i]['keywords'] = data['keywords']
-                if 'exclude_keywords' in data:
-                    monitors[i]['exclude_keywords'] = data['exclude_keywords']
-                if 'min_upvotes' in data:
-                    monitors[i]['min_upvotes'] = data['min_upvotes']
-                if 'color' in data:
-                    monitors[i]['color'] = data['color']
-                if 'enabled' in data:
-                    monitors[i]['enabled'] = data['enabled']
-                if 'cooldown_minutes' in data:
-                    monitors[i]['cooldown_minutes'] = data['cooldown_minutes']
-                if 'max_post_age_hours' in data:
-                    monitors[i]['max_post_age_hours'] = data['max_post_age_hours']
-                # New filter fields
-                if 'domain_contains' in data:
-                    monitors[i]['domain_contains'] = data['domain_contains']
-                if 'domain_excludes' in data:
-                    monitors[i]['domain_excludes'] = data['domain_excludes']
-                if 'flair_contains' in data:
-                    monitors[i]['flair_contains'] = data['flair_contains']
-                if 'author_includes' in data:
-                    monitors[i]['author_includes'] = data['author_includes']
-                if 'author_excludes' in data:
-                    monitors[i]['author_excludes'] = data['author_excludes']
+                # Merge the client-settable fields onto the existing monitor, then re-validate
+                # + re-serialize through the model (preserving id and any bot-only fields).
+                merged = dict(monitor)
+                for field in MONITOR_INPUT_FIELDS:
+                    if field in data:
+                        merged[field] = data[field]
+                monitors[i] = models.Monitor(**merged).to_stored_dict()
 
-                clean_monitor(monitors[i])
                 config['subreddits_to_search'] = monitors
                 save_config(config)
 
