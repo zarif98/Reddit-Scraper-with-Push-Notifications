@@ -40,7 +40,7 @@ export default function MonitorModal({
     activeSourceDegraded = false,
 }: MonitorModalProps) {
     const [activeTab, setActiveTab] = useState<TabType>('filters');
-    const [formData, setFormData] = useState<Partial<Monitor>>(DEFAULT_MONITOR);
+    const [formData, setFormData] = useState<Partial<Monitor>>(() => monitor ?? { ...DEFAULT_MONITOR, color: DEFAULT_COLORS[Math.floor(Math.random() * DEFAULT_COLORS.length)] });
     const [newKeyword, setNewKeyword] = useState('');
     const [newExcludeKeyword, setNewExcludeKeyword] = useState('');
     const [newDomainContains, setNewDomainContains] = useState('');
@@ -52,29 +52,16 @@ export default function MonitorModal({
     const [confirmDelete, setConfirmDelete] = useState(false);
 
     // Subreddit autocomplete state
-    const [subredditQuery, setSubredditQuery] = useState('');
-    const [suggestions, setSuggestions] = useState<SubredditSuggestion[]>([]);
+    const [subredditQuery, setSubredditQuery] = useState(monitor?.subreddit || '');
+    const [searchResults, setSuggestions] = useState<SubredditSuggestion[]>([]);
+    const suggestions = subredditQuery.length >= 2 ? searchResults : [];
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [isSearching, setIsSearching] = useState(false);
     const suggestionRef = useRef<HTMLDivElement>(null);
 
-    useEffect(() => {
-        if (monitor) {
-            setFormData(monitor);
-            setSubredditQuery(monitor.subreddit || '');
-        } else {
-            setFormData({
-                ...DEFAULT_MONITOR,
-                color: DEFAULT_COLORS[Math.floor(Math.random() * DEFAULT_COLORS.length)],
-            });
-            setSubredditQuery('');
-        }
-    }, [monitor]);
-
     // Debounced subreddit search
     useEffect(() => {
         if (!subredditQuery || subredditQuery.length < 2) {
-            setSuggestions([]);
             return;
         }
 
