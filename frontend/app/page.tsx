@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import MonitorCard from '@/components/MonitorCard';
 import MonitorModal from '@/components/MonitorModal';
 import SettingsModal from '@/components/SettingsModal';
@@ -24,17 +24,13 @@ export default function Home() {
   const [activeSourceDegraded, setActiveSourceDegraded] = useState(false);
   const [richFiltersSupported, setRichFiltersSupported] = useState(true);
 
-  const checkCredentials = async () => {
-    try {
-      const response = await fetch(`${getApiUrl()}/api/credentials/status`);
-      const data = await response.json();
-      setIsConfigured(data.configured);
-    } catch (err) {
-      // If API is down, assume configured (use env vars)
-      setIsConfigured(true);
-    }
-  };
+  const checkCredentials = useCallback(() => fetch(`${getApiUrl()}/api/credentials/status`)
+    .then(response => response.json())
+    .then(data => setIsConfigured(data.configured))
+    // If API is down, assume configured (use env vars).
+    .catch(() => setIsConfigured(true)), []);
 
+  useEffect(() => {
   const checkBotStatus = async () => {
     try {
       const response = await fetch(`${getApiUrl()}/api/status`);
@@ -44,14 +40,26 @@ export default function Home() {
       const degraded = !!data.using_json_fallback;
       setActiveSourceDegraded(degraded);
       setFallbackWarning(degraded && data.message ? data.message : null);
-    } catch (err) {
+    } catch {
       // Ignore status check errors
     }
   };
 
+    checkCredentials();
+    void fetch(`${getApiUrl()}/api/monitors`)
+      .then(response => {
+        if (!response.ok) throw new Error("Failed to fetch monitors");
+        return response.json();
+      })
+      .then(data => setMonitors(data.monitors || []))
+      .catch(err => setError(err instanceof Error ? err.message : "Failed to load monitors"))
+      .finally(() => setLoading(false));
+    checkBotStatus();
+  }, [checkCredentials]);
+
   const fetchMonitors = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
       const response = await fetch(`${getApiUrl()}/api/monitors`);
       if (!response.ok) throw new Error('Failed to fetch monitors');
       const data = await response.json();
@@ -63,12 +71,6 @@ export default function Home() {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    checkCredentials();
-    fetchMonitors();
-    checkBotStatus();
-  }, []);
 
   const handleToggle = async (id: string, enabled: boolean) => {
     try {
@@ -276,6 +278,7 @@ export default function Home() {
       {/* Monitor Modal */}
       {isModalOpen && (
         <MonitorModal
+          key={selectedMonitor?.id ?? "new"}
           monitor={selectedMonitor}
           isCreating={isCreating}
           onClose={() => setIsModalOpen(false)}

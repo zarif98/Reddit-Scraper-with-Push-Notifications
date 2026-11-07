@@ -25,7 +25,7 @@ export default function SetupRequired({ onOpenSettings, onDismiss }: SetupRequir
                 </p>
 
                 <div className="bg-white/5 rounded-lg p-4 mb-6 text-left">
-                    <h3 className="text-sm font-semibold text-white/80 mb-2">You'll need:</h3>
+                    <h3 className="text-sm font-semibold text-white/80 mb-2">You&apos;ll need:</h3>
                     <ul className="text-sm text-white/60 space-y-1">
                         <li>• Reddit API credentials (Client ID & Secret)</li>
                         <li>• Reddit account (username & password)</li>

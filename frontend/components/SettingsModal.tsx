@@ -23,10 +23,7 @@ export default function SettingsModal({ onClose, onSave }: SettingsModalProps) {
     const [newUrl, setNewUrl] = useState('');
 
     useEffect(() => {
-        fetchCredentials();
-    }, []);
-
-    const fetchCredentials = async () => {
+      const fetchCredentials = async () => {
         try {
             const [credRes, orderRes] = await Promise.all([
                 fetch(`${getApiUrl()}/api/credentials`),
@@ -45,7 +42,9 @@ export default function SettingsModal({ onClose, onSave }: SettingsModalProps) {
         } finally {
             setLoading(false);
         }
-    };
+      };
+      void fetchCredentials();
+    }, []);
 
     const handleChange = (field: keyof Credentials, value: string) => {
         setCredentials(prev => ({ ...prev, [field]: value }));
@@ -83,7 +82,7 @@ export default function SettingsModal({ onClose, onSave }: SettingsModalProps) {
             if (!data.success && data.error) {
                 setError(data.error);
             }
-        } catch (err) {
+        } catch {
             setTestSuccess(false);
             setError('Failed to send test notification');
         } finally {
@@ -121,7 +120,7 @@ export default function SettingsModal({ onClose, onSave }: SettingsModalProps) {
             } else {
                 setError(data.error || 'Failed to save credentials');
             }
-        } catch (err) {
+        } catch {
             setError('Failed to save credentials');
         } finally {
             setSaving(false);

@@ -143,3 +143,13 @@ exponential backoff, and coalesces duplicate concurrent fetches. Order is set vi
 - **Test through the public surface** — call the public functions/accessors, not private
   state, so tests survive internal refactors.
 - Add/adjust tests with any behavior change; keep the suite green.
+
+### Frontend lint dependency compatibility
+
+Keep ESLint on 9.39.x while eslint-plugin-react 7.37.5 declares support only
+through ESLint 9; ESLint 10 removes context APIs this plugin still uses.
+The scoped minimatch 11.0.5 override under typescript-estree fixes
+GHSA-g3hv-75wg-m249. Its only caller uses the retained named minimatch function
+with the dot option; it does not use the removed AST/makeRe API. Node 20 in CI
+and the frontend container satisfies its engine requirement. Remove the override
+when typescript-eslint declares a fixed minimatch dependency upstream.
